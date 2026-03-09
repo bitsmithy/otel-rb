@@ -1,0 +1,23 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.2
+  Exclude:
+    - 'vendor/**/*'
+
+Style/Documentation:
+  Enabled: false
+
+Metrics/MethodLength:
+  Max: 30
+
+Metrics/AbcSize:
+  Max: 40
+
+Metrics/BlockLength:
+  Enabled: false
+
+Naming/VariableNumber:
+  Enabled: false
+
+Gemspec/DevelopmentDependencies:
+  Enabled: false

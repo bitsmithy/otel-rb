@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>otel-rb — Implementation Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============ THEME (Warm Paper/Ink) ============ */
+  :root {
+    --font-body: 'Fraunces', Georgia, serif;
+    --font-mono: 'Source Code Pro', 'SF Mono', Consolas, monospace;
+
+    --bg: #faf7f2;
+    --surface: #ffffff;
+    --surface2: #f3ede4;
+    --border: rgba(100, 70, 30, 0.10);
+    --border-bright: rgba(100, 70, 30, 0.18);
+    --text: #2c1f0e;
+    --text-dim: #7a5c3a;
+
+    --rust: #b84c1a;
+    --rust-dim: rgba(184, 76, 26, 0.09);
+    --sage: #4a7c5f;
+    --sage-dim: rgba(74, 124, 95, 0.09);
+    --amber: #c47a1a;
+    --amber-dim: rgba(196, 122, 26, 0.09);
+    --slate: #3d5166;
+    --slate-dim: rgba(61, 81, 102, 0.09);
+    --plum: #7b3f7a;
+    --plum-dim: rgba(123, 63, 122, 0.09);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1108;
+      --surface: #241a0c;
+      --surface2: #2e2010;
+      --border: rgba(210, 170, 100, 0.10);
+      --border-bright: rgba(210, 170, 100, 0.18);
+      --text: #f0e6d0;
+      --text-dim: #a8895e;
+
+      --rust: #e8774a;
+      --rust-dim: rgba(232, 119, 74, 0.12);
+      --sage: #6dba8e;
+      --sage-dim: rgba(109, 186, 142, 0.12);
+      --amber: #e8a83a;
+      --amber-dim: rgba(232, 168, 58, 0.12);
+      --slate: #7aa8cc;
+      --slate-dim: rgba(122, 168, 204, 0.12);
+      --plum: #c07abf;
+      --plum-dim: rgba(192, 122, 191, 0.12);
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background-color: var(--bg);
+    background-image: repeating-linear-gradient(
+      -45deg, transparent, transparent 60px,
+      var(--border) 60px, var(--border) 61px
+    );
+    color: var(--text);
+    font-family: var(--font-body);
+    padding: 52px 44px;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeScale {
+    from { opacity: 0; transform: scale(0.94); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  .animate {
+    animation: fadeUp 0.5s ease-out both;
+    animation-delay: calc(var(--i, 0) * 0.08s);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; }
+  }
+
+  /* ============ LAYOUT ============ */
+  .container { max-width: 1080px; margin: 0 auto; }
+
+  /* ============ HEADER ============ */
+  .header { margin-bottom: 52px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--rust);
+    margin-bottom: 10px;
+  }
+
+  h1 {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.1;
+    margin-bottom: 12px;
+    font-style: italic;
+  }
+
+  .lead {
+    font-size: 16px;
+    color: var(--text-dim);
+    max-width: 600px;
+    line-height: 1.7;
+  }
+
+  .lead code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--rust-dim);
+    color: var(--rust);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ============ SECTION LABELS ============ */
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-bright);
+  }
+
+  /* ============ CARDS ============ */
+  .ve-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    min-width: 0;
+  }
+
+  .ve-card--rust  { border-left: 3px solid var(--rust); }
+  .ve-card--sage  { border-left: 3px solid var(--sage); }
+  .ve-card--amber { border-left: 3px solid var(--amber); }
+  .ve-card--slate { border-left: 3px solid var(--slate); }
+  .ve-card--plum  { border-left: 3px solid var(--plum); }
+
+  .card-title {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 6px;
+    overflow-wrap: break-word;
+  }
+
+  .card-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.65;
+    overflow-wrap: break-word;
+  }
+
+  .card-desc code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--surface2);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    overflow-wrap: break-word;
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    margin-top: 8px;
+  }
+
+  .tag-rust  { background: var(--rust-dim);  color: var(--rust); }
+  .tag-sage  { background: var(--sage-dim);  color: var(--sage); }
+  .tag-amber { background: var(--amber-dim); color: var(--amber); }
+  .tag-slate { background: var(--slate-dim); color: var(--slate); }
+  .tag-plum  { background: var(--plum-dim);  color: var(--plum); }
+
+  /* ============ PHASES TIMELINE ============ */
+  .phases { display: flex; flex-direction: column; gap: 0; margin-bottom: 52px; position: relative; }
+
+  .phases::before {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 24px;
+    bottom: 24px;
+    width: 2px;
+    background: var(--border-bright);
+  }
+
+  .phase { display: flex; gap: 24px; align-items: flex-start; padding: 0 0 28px 0; }
+
+  .phase-num {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--border-bright);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .phase--rust .phase-num  { border-color: var(--rust);  color: var(--rust); }
+  .phase--sage .phase-num  { border-color: var(--sage);  color: var(--sage); }
+  .phase--amber .phase-num { border-color: var(--amber); color: var(--amber); }
+  .phase--slate .phase-num { border-color: var(--slate); color: var(--slate); }
+  .phase--plum .phase-num  { border-color: var(--plum);  color: var(--plum); }
+
+  .phase-body { flex: 1; min-width: 0; padding-top: 8px; }
+
+  .phase-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    overflow-wrap: break-word;
+  }
+
+  .phase-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 10px;
+    overflow-wrap: break-word;
+  }
+
+  .task-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+
+  .task-list li {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow-wrap: break-word;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .task-list li::before {
+    content: '○';
+    color: var(--border-bright);
+    flex-shrink: 0;
+  }
+
+  /* ============ FILE MAP GRID ============ */
+  .filemap { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 52px; }
+
+  /* ============ API SURFACE ============ */
+  .api-section { margin-bottom: 52px; }
+
+  .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+
+  .api-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .api-header {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+    overflow-wrap: break-word;
+  }
+
+  .api-body {
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    overflow-wrap: break-word;
+  }
+
+  .api-body code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--surface2);
+    color: var(--text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    display: block;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+
+  /* ============ CODE BLOCK ============ */
+  .code-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .code-header {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .code-body {
+    padding: 16px 18px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    overflow-x: auto;
+  }
+
+  /* ============ MERMAID ============ */
+  .mermaid-wrap {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
+    padding: 32px 24px;
+    overflow: auto;
+    margin-bottom: 36px;
+  }
+
+  .mermaid-wrap .mermaid {
+    display: flex;
+    justify-content: center;
+    transition: transform 0.18s ease;
+    transform-origin: top center;
+  }
+
+  .zoom-controls {
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 2px; z-index: 10;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px;
+  }
+
+  .zoom-controls button {
+    width: 28px; height: 28px; border: none; background: transparent;
+    color: var(--text-dim); font-family: var(--font-mono); font-size: 14px;
+    cursor: pointer; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .zoom-controls button:hover { background: var(--border); color: var(--text); }
+
+  .mermaid-wrap { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .mermaid-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+  .mermaid-wrap::-webkit-scrollbar-track { background: transparent; }
+  .mermaid-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .mermaid-wrap.is-zoomed { cursor: grab; }
+  .mermaid-wrap.is-panning { cursor: grabbing; user-select: none; }
+
+  .mermaid .nodeLabel { font-family: var(--font-body) !important; font-size: 14px !important; }
+  .mermaid .edgeLabel { font-family: var(--font-mono) !important; font-size: 11px !important; }
+  .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon { stroke-width: 1.5px !important; }
+  .mermaid .edge-pattern-solid { stroke-width: 1.5px !important; }
+
+  /* ============ CALLOUT ============ */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    margin-bottom: 52px;
+    overflow-wrap: break-word;
+  }
+
+  .callout strong { color: var(--text); }
+  .callout code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--amber-dim);
+    color: var(--amber);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ============ DECISION TABLE ============ */
+  .table-wrap { overflow-x: auto; margin-bottom: 52px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  thead th {
+    background: var(--surface2);
+    padding: 10px 14px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-bright);
+  }
+
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    overflow-wrap: break-word;
+    min-width: 0;
+  }
+
+  td:first-child { font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: var(--rust-dim); }
+
+  td code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 700px) {
+    body { padding: 20px 16px; }
+    h1 { font-size: 26px; }
+    .filemap, .api-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header animate" style="--i:0">
+    <div class="eyebrow">Implementation Plan — Phase 2</div>
+    <h1>otel-rb</h1>
+    <p class="lead">
+      A thin Ruby gem mirroring <code>bitsmithy/go-otel</code> — one call wires
+      traces, metrics, and logs over OTLP/HTTP. Rack middleware for HTTP
+      instrumentation. Logger formatter for trace-log correlation.
+    </p>
+  </div>
+
+  <!-- SIGNAL FLOW DIAGRAM -->
+  <div class="section-label animate" style="--i:1">Signal flow</div>
+
+  <div class="mermaid-wrap animate" style="--i:2">
+    <div class="zoom-controls">
+      <button onclick="zoomDiagram(this,1.2)" title="Zoom in">+</button>
+      <button onclick="zoomDiagram(this,0.8)" title="Zoom out">&minus;</button>
+      <button onclick="resetZoom(this)" title="Reset">&#8634;</button>
+    </div>
+    <pre class="mermaid">
+graph TD
+  CFG["Telemetry::Config<br/>all fields optional"]
+  SETUP["Telemetry.setup(config)<br/>returns shutdown / tracer / meter"]
+
+  subgraph PROVIDERS["SDK Providers"]
+    TP["TracerProvider<br/>+ BatchSpanProcessor"]
+    MP["MeterProvider<br/>+ PeriodicMetricReader"]
+    LP["LoggerProvider (optional)<br/>+ BatchLogRecordProcessor"]
+  end
+
+  subgraph EXPORTERS["OTLP/HTTP Exporters"]
+    TE["Trace Exporter"]
+    ME["Metric Exporter"]
+    LE["Log Exporter (optional)"]
+  end
+
+  COL["Collector<br/>Grafana Alloy / otelcol"]
+  MW["Telemetry::Middleware<br/>initialize(app, tracer, meter)"]
+  FMT["Telemetry::TraceFormatter<br/>logger.formatter = ..."]
+  APP["Rails / Rack App"]
+
+  CFG --> SETUP
+  SETUP --> TP
+  SETUP --> MP
+  SETUP -.->|rescue LoadError| LP
+  TP --> TE --> COL
+  MP --> ME --> COL
+  LP -.-> LE -.-> COL
+  SETUP -.->|tracer| MW
+  SETUP -.->|meter| MW
+  MW --> APP
+  FMT --> APP
+
+  classDef core fill:#b84c1a22,stroke:#b84c1a,stroke-width:1.5px
+  classDef prov fill:#4a7c5f22,stroke:#4a7c5f,stroke-width:1.5px
+  classDef exp  fill:#c47a1a22,stroke:#c47a1a,stroke-width:1.5px
+  classDef help fill:#3d516622,stroke:#3d5166,stroke-width:1.5px
+  classDef infra fill:#7b3f7a22,stroke:#7b3f7a,stroke-width:1.5px
+  class CFG,SETUP core
+  class TP,MP,LP prov
+  class TE,ME,LE exp
+  class MW,FMT help
+  class COL,APP infra
+    </pre>
+  </div>
+
+  <!-- MIDDLEWARE REQUEST FLOW -->
+  <div class="section-label animate" style="--i:3">Middleware request lifecycle</div>
+
+  <div class="mermaid-wrap animate" style="--i:4">
+    <div class="zoom-controls">
+      <button onclick="zoomDiagram(this,1.2)" title="Zoom in">+</button>
+      <button onclick="zoomDiagram(this,0.8)" title="Zoom out">&minus;</button>
+      <button onclick="resetZoom(this)" title="Reset">&#8634;</button>
+    </div>
+    <pre class="mermaid">
+graph TD
+  REQ["Incoming request<br/>traceparent header optional"]
+  EXTRACT["Extract W3C context<br/>OpenTelemetry.propagation.extract"]
+  SPANSTART["Start server span<br/>METHOD + raw path (temporary)"]
+  GAUGE["active_requests +1"]
+  APPCALL["@app.call(env)<br/>Rails routes + handles request"]
+  CAPTURE["Capture status + duration"]
+  ROUTE["Read route template<br/>env route_uri_pattern or PATH_INFO"]
+  RENAME["Rename span<br/>METHOD + route template"]
+  STATUS{"status >= 500?"}
+  ERR["span.status = error"]
+  ATTRS["Set span attributes<br/>method / route / status / host / port"]
+  METRICS["Record metrics<br/>count + duration + gauge -1"]
+  RESP["Return response"]
+
+  REQ --> EXTRACT --> SPANSTART --> GAUGE --> APPCALL
+  APPCALL --> CAPTURE --> ROUTE --> RENAME --> STATUS
+  STATUS -->|yes| ERR --> ATTRS
+  STATUS -->|no| ATTRS
+  ATTRS --> METRICS --> RESP
+
+  classDef mw   fill:#b84c1a22,stroke:#b84c1a,stroke-width:1.5px
+  classDef app  fill:#4a7c5f22,stroke:#4a7c5f,stroke-width:1.5px
+  classDef met  fill:#c47a1a22,stroke:#c47a1a,stroke-width:1.5px
+  class EXTRACT,SPANSTART,RENAME,ATTRS,ERR mw
+  class GAUGE,CAPTURE,ROUTE,STATUS app
+  class METRICS met
+    </pre>
+  </div>
+
+  <!-- PHASE TIMELINE -->
+  <div class="section-label animate" style="--i:5">Implementation phases</div>
+
+  <div class="phases animate" style="--i:6">
+
+    <div class="phase phase--rust">
+      <div class="phase-num">1</div>
+      <div class="phase-body">
+        <div class="phase-title">Gem scaffold</div>
+        <p class="phase-desc">Directory, git repo, gemspec, Gemfile, .rspec, version constant.</p>
+        <ul class="task-list">
+          <li>Create <code>otel-rb/</code> + git init</li>
+          <li>Write <code>otel-rb.gemspec</code> with all dependencies</li>
+          <li>Write <code>Gemfile</code> (sources gemspec)</li>
+          <li>Write <code>.rspec</code> with <code>--format documentation</code></li>
+          <li>Write <code>lib/telemetry/version.rb</code> → <code>VERSION = "0.1.0"</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase phase--sage">
+      <div class="phase-num">2</div>
+      <div class="phase-body">
+        <div class="phase-title">Core library</div>
+        <p class="phase-desc">All five source files: config, setup, middleware, formatter, entry point.</p>
+        <ul class="task-list">
+          <li><code>lib/telemetry/config.rb</code> — Config value object, all defaults</li>
+          <li><code>lib/telemetry/setup.rb</code> — Setup.call wiring all three signals</li>
+          <li><code>lib/telemetry/middleware.rb</code> — Rack middleware, instruments pre-registered</li>
+          <li><code>lib/telemetry/trace_formatter.rb</code> — Logger::Formatter subclass</li>
+          <li><code>lib/telemetry.rb</code> — top-level module + Telemetry.setup</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase phase--amber">
+      <div class="phase-num">3–6</div>
+      <div class="phase-body">
+        <div class="phase-title">Tests (20 cases across 4 spec files)</div>
+        <p class="phase-desc">spec_helper resets OTel globals between each test. All assertions use InMemorySpanExporter — no collector needed.</p>
+        <ul class="task-list">
+          <li>config_spec: 2 cases — defaults, explicit keyword args</li>
+          <li>setup_spec: 7 cases — shutdown, tracer, providers, propagator, lazy endpoint, LoadError degradation, shutdown call</li>
+          <li>middleware_spec: 7 cases — span creation, naming, route template, attributes, 4xx/5xx, W3C propagation</li>
+          <li>trace_formatter_spec: 4 cases — no span, active span (trace_id + span_id), after span ends</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase phase--slate">
+      <div class="phase-num">7</div>
+      <div class="phase-body">
+        <div class="phase-title">Run tests &amp; fix</div>
+        <p class="phase-desc"><code>bundle install</code> then <code>bundle exec rspec</code>. Resolve any API name mismatches or require path issues discovered against actual gem versions.</p>
+        <ul class="task-list">
+          <li>bundle install</li>
+          <li>bundle exec rspec — all 20 tests green</li>
+          <li>Fix failures (constant names, require paths, API surface)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase phase--plum">
+      <div class="phase-num">8</div>
+      <div class="phase-body">
+        <div class="phase-title">Polish</div>
+        <p class="phase-desc">README with Rails integration example, RuboCop autocorrect, gem build smoke test.</p>
+        <ul class="task-list">
+          <li>Write README.md (install, Rails initializer, middleware registration)</li>
+          <li>bundle exec rubocop --autocorrect</li>
+          <li>gem build otel-rb.gemspec — no warnings</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FILE MAP -->
+  <div class="section-label animate" style="--i:7">File map</div>
+
+  <div class="filemap animate" style="--i:8">
+
+    <div class="ve-card ve-card--rust">
+      <div class="card-title">otel-rb.gemspec</div>
+      <p class="card-desc">Gem metadata and runtime dependencies. Metrics gems declared as hard deps; logs gems omitted (loaded optionally). Dev deps: rspec, rack, rack-test, rubocop.</p>
+      <span class="tag tag-rust">scaffold</span>
+    </div>
+
+    <div class="ve-card ve-card--rust">
+      <div class="card-title">lib/telemetry/version.rb</div>
+      <p class="card-desc"><code>Telemetry::VERSION = "0.1.0"</code>. Referenced by gemspec.</p>
+      <span class="tag tag-rust">scaffold</span>
+    </div>
+
+    <div class="ve-card ve-card--sage">
+      <div class="card-title">lib/telemetry/config.rb</div>
+      <p class="card-desc">Value object with keyword args: <code>service_name</code>, <code>service_namespace</code>, <code>service_version</code>, <code>endpoint</code>, <code>log_level</code>. Defaults from <code>$PROGRAM_NAME</code> and env vars.</p>
+      <span class="tag tag-sage">core</span>
+    </div>
+
+    <div class="ve-card ve-card--sage">
+      <div class="card-title">lib/telemetry/setup.rb</div>
+      <p class="card-desc"><code>Telemetry::Setup.call(config)</code>. Wires TracerProvider + BatchSpanProcessor, MeterProvider + PeriodicMetricReader (rescue LoadError), LoggerProvider (rescue LoadError silent). Sets globals and composite W3C propagator. Returns <code>{ shutdown:, tracer:, meter: }</code>.</p>
+      <span class="tag tag-sage">core</span>
+    </div>
+
+    <div class="ve-card ve-card--sage">
+      <div class="card-title">lib/telemetry/middleware.rb</div>
+      <p class="card-desc">Standard Rack middleware. <code>initialize(app, tracer, meter)</code>. Pre-registers 3 metric instruments. Per-request: extract W3C context → start span → <code>@app.call(env)</code> → read route template → rename span → set attributes → record metrics.</p>
+      <span class="tag tag-sage">core</span>
+    </div>
+
+    <div class="ve-card ve-card--sage">
+      <div class="card-title">lib/telemetry/trace_formatter.rb</div>
+      <p class="card-desc">Subclass of <code>Logger::Formatter</code>. Appends <code>trace_id=&lt;32hex&gt; span_id=&lt;16hex&gt;</code> suffix when <code>OpenTelemetry::Trace.current_span.context.valid?</code>. Zero call-site changes in the app.</p>
+      <span class="tag tag-sage">core</span>
+    </div>
+
+    <div class="ve-card ve-card--sage">
+      <div class="card-title">lib/telemetry.rb</div>
+      <p class="card-desc">Top-level module. Requires all files. Exposes <code>Telemetry.setup(config = Config.new)</code> delegating to <code>Setup.call</code>. Only public surface: <code>.setup</code>, <code>::Config</code>, <code>::Middleware</code>, <code>::TraceFormatter</code>.</p>
+      <span class="tag tag-sage">core</span>
+    </div>
+
+    <div class="ve-card ve-card--amber">
+      <div class="card-title">spec/spec_helper.rb</div>
+      <p class="card-desc">Requires opentelemetry SDK and telemetry gem. <code>before(:each)</code> calls <code>OpenTelemetry::SDK.configure</code> to reset global state between tests.</p>
+      <span class="tag tag-amber">tests</span>
+    </div>
+
+    <div class="ve-card ve-card--amber">
+      <div class="card-title">spec/telemetry/config_spec.rb</div>
+      <p class="card-desc">2 test cases. Defaults and explicit keyword args.</p>
+      <span class="tag tag-amber">tests</span>
+    </div>
+
+    <div class="ve-card ve-card--amber">
+      <div class="card-title">spec/telemetry/setup_spec.rb</div>
+      <p class="card-desc">7 test cases. shutdown proc, tracer, global providers, propagator, lazy endpoint, metrics LoadError degradation, shutdown call verified.</p>
+      <span class="tag tag-amber">tests</span>
+    </div>
+
+    <div class="ve-card ve-card--amber">
+      <div class="card-title">spec/telemetry/middleware_spec.rb</div>
+      <p class="card-desc">7 test cases. Uses InMemorySpanExporter + Rack::Test. Span creation, naming, route template, status attribute, 4xx/5xx handling, W3C traceparent propagation.</p>
+      <span class="tag tag-amber">tests</span>
+    </div>
+
+    <div class="ve-card ve-card--amber">
+      <div class="card-title">spec/telemetry/trace_formatter_spec.rb</div>
+      <p class="card-desc">4 test cases. No-span baseline, active span injects trace_id + span_id, post-span cleanup.</p>
+      <span class="tag tag-amber">tests</span>
+    </div>
+
+  </div>
+
+  <!-- PUBLIC API -->
+  <div class="section-label animate" style="--i:9">Public API surface</div>
+
+  <div class="api-section animate" style="--i:10">
+    <div class="api-grid">
+
+      <div class="api-card">
+        <div class="api-header">Telemetry.setup(config = Config.new)</div>
+        <div class="api-body">
+          Primary entry point. Wires all three signals, sets globals, returns result hash.
+          <code>result = Telemetry.setup
+at_exit { result[:shutdown].call }
+tracer = result[:tracer]
+meter  = result[:meter]   # nil if metrics unavailable</code>
+        </div>
+      </div>
+
+      <div class="api-card">
+        <div class="api-header">Telemetry::Config.new(**opts)</div>
+        <div class="api-body">
+          All keyword args optional. Sensible defaults from runtime.
+          <code>Telemetry::Config.new(
+  service_name:      "my-app",
+  service_namespace: "bitsmithy",
+  service_version:   ENV["GIT_COMMIT_SHA"],
+  endpoint:          ENV["OTEL_EXPORTER_OTLP_ENDPOINT"],
+  log_level:         :info
+)</code>
+        </div>
+      </div>
+
+      <div class="api-card">
+        <div class="api-header">Telemetry::Middleware</div>
+        <div class="api-body">
+          Standard Rack middleware. Pass tracer + meter from setup result.
+          <code># config/application.rb
+config.middleware.use Telemetry::Middleware,
+  result[:tracer],
+  result[:meter]</code>
+        </div>
+      </div>
+
+      <div class="api-card">
+        <div class="api-header">Telemetry::TraceFormatter</div>
+        <div class="api-body">
+          Drop-in Logger formatter. Appends trace_id + span_id automatically.
+          <code># config/initializers/telemetry.rb
+Rails.logger.formatter =
+  Telemetry::TraceFormatter.new</code>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- KEY DECISIONS -->
+  <div class="section-label animate" style="--i:11">Key design decisions</div>
+
+  <div class="table-wrap animate" style="--i:12">
+    <table>
+      <thead>
+        <tr>
+          <th>Decision</th>
+          <th>Choice</th>
+          <th>Rationale</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Metrics unavailability</td>
+          <td><code>rescue LoadError</code> → warn + nil</td>
+          <td>Idiomatic Ruby; works in all load paths; graceful degradation without crash</td>
+        </tr>
+        <tr>
+          <td>Logs unavailability</td>
+          <td><code>rescue LoadError</code> → nil (silent)</td>
+          <td>Logs are truly optional; no warning needed; TraceFormatter covers the primary use case</td>
+        </tr>
+        <tr>
+          <td>Log correlation</td>
+          <td><code>Logger::Formatter</code> subclass</td>
+          <td>Inherits <code>msg2str</code> + <code>format_datetime</code>; transparent (zero call-site changes)</td>
+        </tr>
+        <tr>
+          <td>TaggedLogging vs TraceFormatter</td>
+          <td><code>TraceFormatter</code></td>
+          <td>TaggedLogging requires <code>.tagged { }</code> at call site; TraceFormatter is automatic</td>
+        </tr>
+        <tr>
+          <td>Route label</td>
+          <td><code>action_dispatch.route_uri_pattern</code></td>
+          <td>Rails 7.1+ template (e.g. <code>/users/:id</code>) prevents high-cardinality metric labels</td>
+        </tr>
+        <tr>
+          <td>detach_context</td>
+          <td>Not included (v1)</td>
+          <td>Ruby OTel uses fiber-local context with no cancellation signal; Go pattern does not apply</td>
+        </tr>
+        <tr>
+          <td>Metrics as hard gemspec dep</td>
+          <td>Yes (with LoadError guard)</td>
+          <td>Best out-of-the-box experience; constrained envs can use Bundler <code>without</code> group</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- INTEGRATION CALLOUT -->
+  <div class="callout animate" style="--i:13">
+    <strong>Future Rails/Rack integration:</strong> After the gem is built and published (or path-referenced), integration into any Rails app requires three files: add gem to <code>Gemfile</code>, create <code>config/initializers/telemetry.rb</code> calling <code>Telemetry.setup</code> and assigning <code>Rails.logger.formatter</code>, and insert <code>config.middleware.use Telemetry::Middleware, ...</code> into <code>config/application.rb</code>. No other application code changes required.
+  </div>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: true, theme: 'base', look: 'classic',
+    themeVariables: {
+      primaryColor:       isDark ? '#2e1208' : '#fde8da',
+      primaryBorderColor: isDark ? '#e8774a' : '#b84c1a',
+      primaryTextColor:   isDark ? '#f0e6d0' : '#2c1f0e',
+      secondaryColor:     isDark ? '#0d1f14' : '#d4ead9',
+      secondaryBorderColor: isDark ? '#6dba8e' : '#4a7c5f',
+      secondaryTextColor: isDark ? '#f0e6d0' : '#2c1f0e',
+      tertiaryColor:      isDark ? '#271900' : '#fef3c7',
+      tertiaryBorderColor:isDark ? '#e8a83a' : '#c47a1a',
+      tertiaryTextColor:  isDark ? '#f0e6d0' : '#2c1f0e',
+      lineColor:          isDark ? '#a8895e' : '#c8a870',
+      fontSize: '14px',
+      fontFamily: "'Fraunces', Georgia, serif",
+      noteBkgColor:       isDark ? '#241a0c' : '#fefce8',
+      noteTextColor:      isDark ? '#f0e6d0' : '#2c1f0e',
+      noteBorderColor:    isDark ? '#e8a83a' : '#c47a1a',
+    }
+  });
+</script>
+
+<script>
+  function updateZoomState(wrap) {
+    var t = wrap.querySelector('.mermaid');
+    wrap.classList.toggle('is-zoomed', parseFloat(t.dataset.zoom || '1') > 1);
+  }
+  function zoomDiagram(btn, factor) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var t = wrap.querySelector('.mermaid');
+    var next = Math.min(Math.max(parseFloat(t.dataset.zoom || '1') * factor, 0.3), 5);
+    t.dataset.zoom = next; t.style.transform = 'scale(' + next + ')';
+    updateZoomState(wrap);
+  }
+  function resetZoom(btn) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var t = wrap.querySelector('.mermaid');
+    t.dataset.zoom = '1'; t.style.transform = 'scale(1)';
+    updateZoomState(wrap);
+  }
+  document.querySelectorAll('.mermaid-wrap').forEach(function(wrap) {
+    wrap.addEventListener('wheel', function(e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      var t = wrap.querySelector('.mermaid');
+      var next = Math.min(Math.max(parseFloat(t.dataset.zoom || '1') * (e.deltaY < 0 ? 1.1 : 0.9), 0.3), 5);
+      t.dataset.zoom = next; t.style.transform = 'scale(' + next + ')';
+      updateZoomState(wrap);
+    }, { passive: false });
+    var startX, startY, scrollL, scrollT;
+    wrap.addEventListener('mousedown', function(e) {
+      if (e.target.closest('.zoom-controls')) return;
+      if (parseFloat(wrap.querySelector('.mermaid').dataset.zoom || '1') <= 1) return;
+      wrap.classList.add('is-panning');
+      startX = e.clientX; startY = e.clientY;
+      scrollL = wrap.scrollLeft; scrollT = wrap.scrollTop;
+    });
+    window.addEventListener('mousemove', function(e) {
+      if (!wrap.classList.contains('is-panning')) return;
+      wrap.scrollLeft = scrollL - (e.clientX - startX);
+      wrap.scrollTop  = scrollT - (e.clientY - startY);
+    });
+    window.addEventListener('mouseup', function() { wrap.classList.remove('is-panning'); });
+  });
+</script>
+
+</body>
+</html>

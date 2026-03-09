@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>otel-rb — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============ THEME (Blueprint) ============ */
+  :root {
+    --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+
+    --bg: #f0f4f8;
+    --surface: #ffffff;
+    --surface2: #e8eef5;
+    --border: rgba(30, 58, 95, 0.10);
+    --border-bright: rgba(30, 58, 95, 0.20);
+    --text: #1e3a5f;
+    --text-dim: #5577a0;
+
+    --primary: #1e5fa0;
+    --primary-dim: rgba(30, 95, 160, 0.08);
+    --amber: #b45309;
+    --amber-dim: rgba(180, 83, 9, 0.08);
+    --emerald: #047857;
+    --emerald-dim: rgba(4, 120, 87, 0.08);
+    --rose: #be123c;
+    --rose-dim: rgba(190, 18, 60, 0.08);
+    --slate: #334155;
+    --slate-dim: rgba(51, 65, 85, 0.08);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1b2e;
+      --surface: #142238;
+      --surface2: #1c2f47;
+      --border: rgba(120, 160, 220, 0.10);
+      --border-bright: rgba(120, 160, 220, 0.20);
+      --text: #c8dff5;
+      --text-dim: #6a97c8;
+
+      --primary: #60a5fa;
+      --primary-dim: rgba(96, 165, 250, 0.12);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.12);
+      --emerald: #34d399;
+      --emerald-dim: rgba(52, 211, 153, 0.12);
+      --rose: #fb7185;
+      --rose-dim: rgba(251, 113, 133, 0.12);
+      --slate: #94a3b8;
+      --slate-dim: rgba(148, 163, 184, 0.08);
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 32px 32px;
+    color: var(--text);
+    font-family: var(--font-body);
+    padding: 48px 40px;
+    min-height: 100vh;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate {
+    animation: fadeUp 0.45s ease-out both;
+    animation-delay: calc(var(--i, 0) * 0.07s);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+    }
+  }
+
+  /* ============ LAYOUT ============ */
+  .container { max-width: 1060px; margin: 0 auto; }
+
+  .header { margin-bottom: 40px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--primary);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+    margin-bottom: 10px;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.6;
+    max-width: 640px;
+  }
+
+  .subtitle code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--primary-dim);
+    color: var(--primary);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ============ MERMAID ============ */
+  .mermaid-wrap {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
+    padding: 36px 28px;
+    overflow: auto;
+    margin-bottom: 36px;
+  }
+
+  .mermaid-wrap .mermaid {
+    display: flex;
+    justify-content: center;
+    transition: transform 0.18s ease;
+    transform-origin: top center;
+  }
+
+  .zoom-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 2px;
+    z-index: 10;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+  }
+
+  .zoom-controls button {
+    width: 28px; height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .zoom-controls button:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .mermaid-wrap { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .mermaid-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+  .mermaid-wrap::-webkit-scrollbar-track { background: transparent; }
+  .mermaid-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .mermaid-wrap.is-zoomed { cursor: grab; }
+  .mermaid-wrap.is-panning { cursor: grabbing; user-select: none; }
+
+  .mermaid .nodeLabel { font-family: var(--font-body) !important; font-size: 15px !important; }
+  .mermaid .edgeLabel { font-family: var(--font-mono) !important; font-size: 12px !important; }
+  .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon { stroke-width: 1.5px !important; }
+  .mermaid .edge-pattern-solid { stroke-width: 1.5px !important; }
+
+  /* ============ CARDS GRID ============ */
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label::before {
+    content: '';
+    display: block;
+    width: 20px;
+    height: 1px;
+    background: var(--border-bright);
+  }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 40px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 0;
+  }
+
+  .card--primary { border-left: 3px solid var(--primary); }
+  .card--amber { border-left: 3px solid var(--amber); }
+  .card--emerald { border-left: 3px solid var(--emerald); }
+  .card--rose { border-left: 3px solid var(--rose); }
+  .card--slate { border-left: 3px solid var(--slate); }
+
+  .card-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .card-title {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  .card-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .tag-primary { background: var(--primary-dim); color: var(--primary); }
+  .tag-amber { background: var(--amber-dim); color: var(--amber); }
+  .tag-emerald { background: var(--emerald-dim); color: var(--emerald); }
+  .tag-rose { background: var(--rose-dim); color: var(--rose); }
+  .tag-slate { background: var(--slate-dim); color: var(--slate); }
+
+  .card-desc {
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    overflow-wrap: break-word;
+  }
+
+  .card-desc code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--primary-dim);
+    color: var(--primary);
+    padding: 1px 5px;
+    border-radius: 3px;
+    overflow-wrap: break-word;
+  }
+
+  .methods {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .method {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 3px;
+    color: var(--text-dim);
+  }
+
+  /* ============ COMPARISON TABLE ============ */
+  .compare-section { margin-bottom: 40px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  thead th {
+    background: var(--surface2);
+    padding: 10px 14px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-bright);
+  }
+
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    overflow-wrap: break-word;
+    min-width: 0;
+  }
+
+  td:first-child { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: var(--primary-dim); }
+
+  td code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 3px;
+    overflow-wrap: break-word;
+  }
+
+  /* ============ CALLOUT ============ */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    margin-top: 24px;
+  }
+  .callout strong { color: var(--text); }
+  .callout code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--amber-dim);
+    color: var(--amber);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 700px) {
+    body { padding: 20px 16px; }
+    h1 { font-size: 24px; }
+    .cards { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header animate" style="--i:0">
+    <div class="eyebrow">Architecture — Phase 1 Research</div>
+    <h1>otel-rb gem</h1>
+    <p class="subtitle">
+      A thin, opinionated OpenTelemetry setup library for Ruby/Rails services —
+      the Ruby equivalent of <code>bitsmithy/go-otel</code>.
+      One call wires traces, metrics, and logs over OTLP/HTTP.
+    </p>
+  </div>
+
+  <!-- ==================== OVERVIEW DIAGRAM ==================== -->
+  <div class="section-label animate" style="--i:1">System Overview</div>
+
+  <div class="mermaid-wrap animate" style="--i:2">
+    <div class="zoom-controls">
+      <button onclick="zoomDiagram(this, 1.2)" title="Zoom in">+</button>
+      <button onclick="zoomDiagram(this, 0.8)" title="Zoom out">&minus;</button>
+      <button onclick="resetZoom(this)" title="Reset">&#8634;</button>
+    </div>
+    <pre class="mermaid">
+graph TD
+  APP["Rails / Rack App"]
+  CFG["Telemetry::Config<br/>service_name, endpoint, log_level"]
+  SETUP["Telemetry.setup(config)<br/>returns shutdown, tracer, meter"]
+
+  subgraph SDK["OpenTelemetry Ruby SDK"]
+    TP["TracerProvider<br/>opentelemetry-sdk"]
+    MP["MeterProvider<br/>opentelemetry-metrics-sdk"]
+    LP["LoggerProvider<br/>opentelemetry-logs-sdk"]
+  end
+
+  subgraph EXP["OTLP/HTTP Exporters"]
+    TE["Trace Exporter<br/>otlp-exporter"]
+    ME["Metric Exporter<br/>otlp-exporter-metrics"]
+    LE["Log Exporter<br/>otlp-exporter-logs"]
+  end
+
+  COL["OTLP Collector<br/>Grafana Alloy / OTel Collector"]
+
+  MW["Telemetry::Middleware<br/>Standard Rack middleware"]
+  FMT["Telemetry::TraceFormatter<br/>Injects trace_id and span_id"]
+
+  APP --> CFG
+  CFG --> SETUP
+  SETUP --> TP
+  SETUP --> MP
+  SETUP --> LP
+  TP --> TE
+  MP --> ME
+  LP --> LE
+  TE --> COL
+  ME --> COL
+  LE --> COL
+  SETUP -.->|tracer| MW
+  SETUP -.->|meter| MW
+  MW -->|instruments| APP
+  FMT -->|logger config| APP
+
+  classDef core fill:#1e5fa022,stroke:#1e5fa0,stroke-width:1.5px
+  classDef exporter fill:#04785722,stroke:#047857,stroke-width:1.5px
+  classDef helper fill:#b4530922,stroke:#b45309,stroke-width:1.5px
+  classDef infra fill:#33415522,stroke:#334155,stroke-width:1.5px
+  class SETUP,CFG core
+  class TP,MP,LP,TE,ME,LE exporter
+  class MW,FMT helper
+  class COL infra
+    </pre>
+  </div>
+
+  <!-- ==================== DATA FLOW DIAGRAM ==================== -->
+  <div class="section-label animate" style="--i:3">HTTP Request Flow</div>
+
+  <div class="mermaid-wrap animate" style="--i:4">
+    <div class="zoom-controls">
+      <button onclick="zoomDiagram(this, 1.2)" title="Zoom in">+</button>
+      <button onclick="zoomDiagram(this, 0.8)" title="Zoom out">&minus;</button>
+      <button onclick="resetZoom(this)" title="Reset">&#8634;</button>
+    </div>
+    <pre class="mermaid">
+graph TD
+  REQ["Incoming HTTP Request<br/>With optional traceparent header"]
+  MW1["Telemetry::Middleware<br/>Extract W3C trace context"]
+  SPAN["Start server span<br/>METHOD + path"]
+  ACTIVE["Increment active_requests gauge"]
+  RAILS["Rails Router<br/>Sets route pattern in env"]
+  ACTION["Rails Action / Handler<br/>Business logic"]
+  STATUS["Capture response status code<br/>via status recorder wrapper"]
+  PATTERN["Read route pattern<br/>env route_uri_pattern or PATH_INFO"]
+  METRICS["Record metrics<br/>request count + duration + labels"]
+  SPANEND["Finalize span<br/>Set route name, 5xx = error"]
+  RESP["HTTP Response"]
+
+  REQ --> MW1
+  MW1 --> SPAN
+  SPAN --> ACTIVE
+  ACTIVE --> RAILS
+  RAILS --> ACTION
+  ACTION --> STATUS
+  STATUS --> PATTERN
+  PATTERN --> METRICS
+  METRICS --> SPANEND
+  SPANEND --> RESP
+
+  classDef mw fill:#1e5fa022,stroke:#1e5fa0,stroke-width:1.5px
+  classDef app fill:#04785722,stroke:#047857,stroke-width:1.5px
+  classDef metric fill:#b4530922,stroke:#b45309,stroke-width:1.5px
+  class MW1,SPAN,ACTIVE,SPANEND,PATTERN mw
+  class RAILS,ACTION app
+  class METRICS,STATUS metric
+    </pre>
+  </div>
+
+  <!-- ==================== MODULE CARDS ==================== -->
+  <div class="section-label animate" style="--i:5">Module Breakdown</div>
+
+  <div class="cards">
+
+    <div class="card card--primary animate" style="--i:6">
+      <div class="card-header">
+        <span class="card-title">lib/telemetry/setup.rb</span>
+        <span class="card-tag tag-primary">core</span>
+      </div>
+      <p class="card-desc">
+        The main entry point. <code>Telemetry.setup(config)</code> creates and registers
+        TracerProvider, MeterProvider, LoggerProvider. Sets the W3C TraceContext+Baggage
+        composite propagator globally. Returns <code>{ shutdown:, tracer:, meter: }</code>.
+      </p>
+      <div class="methods">
+        <span class="method">Telemetry.setup</span>
+        <span class="method">:shutdown</span>
+        <span class="method">:tracer</span>
+        <span class="method">:meter</span>
+      </div>
+    </div>
+
+    <div class="card card--primary animate" style="--i:7">
+      <div class="card-header">
+        <span class="card-title">lib/telemetry/config.rb</span>
+        <span class="card-tag tag-primary">core</span>
+      </div>
+      <p class="card-desc">
+        Plain data object for configuration. All fields optional with sensible defaults:
+        <code>service_name</code> from <code>$PROGRAM_NAME</code>,
+        <code>service_namespace</code> from parent dir,
+        <code>service_version</code> from gemspec, <code>endpoint</code> from
+        <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> env var.
+      </p>
+      <div class="methods">
+        <span class="method">service_name:</span>
+        <span class="method">service_namespace:</span>
+        <span class="method">service_version:</span>
+        <span class="method">endpoint:</span>
+        <span class="method">log_level:</span>
+      </div>
+    </div>
+
+    <div class="card card--amber animate" style="--i:8">
+      <div class="card-header">
+        <span class="card-title">lib/telemetry/middleware.rb</span>
+        <span class="card-tag tag-amber">http</span>
+      </div>
+      <p class="card-desc">
+        Standard Rack middleware: <code>initialize(app, tracer, meter)</code>. Fully
+        composable — calls <code>@app.call(env)</code>, never mutates <code>env</code>.
+        Pre-registers metric instruments once on init. Extracts W3C trace context from
+        headers; reads route pattern from <code>env</code> after routing for
+        low-cardinality labels. Compatible alongside other OTel middleware.
+      </p>
+      <div class="methods">
+        <span class="method">.new(app, tracer, meter)</span>
+        <span class="method">#call(env)</span>
+      </div>
+    </div>
+
+    <div class="card card--emerald animate" style="--i:9">
+      <div class="card-header">
+        <span class="card-title">lib/telemetry/trace_formatter.rb</span>
+        <span class="card-tag tag-emerald">logging</span>
+      </div>
+      <p class="card-desc">
+        A <code>Logger::Formatter</code> subclass that appends <code>trace_id</code>
+        and <code>span_id</code> to every log message when an active OTel span is
+        present in the current fiber-local context. Drop-in replacement for the Rails
+        logger formatter.
+      </p>
+      <div class="methods">
+        <span class="method">#call(severity, time, progname, msg)</span>
+      </div>
+    </div>
+
+    <div class="card card--rose animate" style="--i:10">
+      <div class="card-header">
+        <span class="card-title">lib/telemetry.rb</span>
+        <span class="card-tag tag-rose">entry point</span>
+      </div>
+      <p class="card-desc">
+        Top-level <code>Telemetry</code> module re-exporting the public API.
+        No <code>detach_context</code> — Ruby OTel uses fiber-local context with no
+        cancellation signal, so the Go pattern does not apply.
+      </p>
+      <div class="methods">
+        <span class="method">.setup</span>
+        <span class="method">::Config</span>
+        <span class="method">::Middleware</span>
+        <span class="method">::TraceFormatter</span>
+      </div>
+    </div>
+
+    <div class="card card--slate animate" style="--i:11">
+      <div class="card-header">
+        <span class="card-title">spec/</span>
+        <span class="card-tag tag-slate">tests</span>
+      </div>
+      <p class="card-desc">
+        RSpec test suite using in-memory exporters and span recorders —
+        no real collector needed. Tests cover: setup returns non-nil tracer/meter,
+        endpoint override, middleware creates spans with correct attributes,
+        metric instruments record correct values, formatter injects trace IDs.
+      </p>
+      <div class="methods">
+        <span class="method">setup_spec.rb</span>
+        <span class="method">middleware_spec.rb</span>
+        <span class="method">trace_formatter_spec.rb</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== GO vs RUBY COMPARISON ==================== -->
+  <div class="section-label animate" style="--i:12">go-otel → otel-rb Translation</div>
+
+  <div class="compare-section animate" style="--i:13">
+    <table>
+      <thead>
+        <tr>
+          <th>Concept</th>
+          <th>Go (go-otel)</th>
+          <th>Ruby (otel-rb)</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Setup entry point</td>
+          <td><code>telemetry.Setup(ctx, cfg)</code></td>
+          <td><code>Telemetry.setup(config)</code></td>
+          <td>No context arg — Ruby OTel uses fiber-local context</td>
+        </tr>
+        <tr>
+          <td>Config type</td>
+          <td><code>telemetry.Config{...}</code> struct</td>
+          <td><code>Telemetry::Config.new(...)</code></td>
+          <td>Keyword arguments, all optional</td>
+        </tr>
+        <tr>
+          <td>Return values</td>
+          <td>shutdown, logger, tracer, meter, err</td>
+          <td><code>{ shutdown:, tracer:, meter: }</code></td>
+          <td>Logger handled via formatter, not returned object</td>
+        </tr>
+        <tr>
+          <td>Shutdown</td>
+          <td><code>shutdown func(context.Context) error</code></td>
+          <td><code>shutdown = -&gt; { ... }</code> proc</td>
+          <td>Call from <code>at_exit</code> or Rack <code>close</code></td>
+        </tr>
+        <tr>
+          <td>HTTP middleware</td>
+          <td><code>mw.Wrap(next)</code></td>
+          <td><code>use Telemetry::Middleware, tracer, meter</code></td>
+          <td>Standard Rack interface; <code>app</code> injected by Rack, fully composable</td>
+        </tr>
+        <tr>
+          <td>Log + trace correlation</td>
+          <td><code>TraceHandler</code> wraps slog.Handler</td>
+          <td><code>Telemetry::TraceFormatter</code> wraps Logger formatter</td>
+          <td>Set on Rails.logger in initializer</td>
+        </tr>
+        <tr>
+          <td>Fanout logging</td>
+          <td><code>FanoutHandler[]slog.Handler</code></td>
+          <td>Rails <code>broadcast</code> / multiple outputs</td>
+          <td>Rails already supports multi-device logging</td>
+        </tr>
+        <tr>
+          <td>Detached context</td>
+          <td><code>telemetry.DetachedContext(ctx)</code></td>
+          <td>Not included in v1</td>
+          <td>Ruby OTel fiber-local ctx has no cancellation signal; Go pattern does not apply</td>
+        </tr>
+        <tr>
+          <td>Route template</td>
+          <td><code>r.Pattern</code> (Go 1.22+ ServeMux)</td>
+          <td><code>env["action_dispatch.route_uri_pattern"]</code></td>
+          <td>Rails-specific; fallback to <code>PATH_INFO</code> for plain Rack</td>
+        </tr>
+        <tr>
+          <td>Service name default</td>
+          <td>Last segment of module path</td>
+          <td><code>File.basename($PROGRAM_NAME)</code></td>
+          <td>Or from gemspec <code>name</code> field</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout animate" style="--i:14">
+    <strong>Key Ruby-specific constraint:</strong> The Ruby OTel logs signal is still
+    experimental in early 2026. <code>opentelemetry-exporter-otlp-logs</code> may have
+    limited availability — logs integration should be optional/additive. Traces + metrics
+    are stable and well-supported. The log formatter approach (injecting
+    <code>trace_id</code>/<code>span_id</code> into Rails logger) provides the most
+    pragmatic path to trace-log correlation without depending on experimental packages.
+  </div>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    look: 'classic',
+    themeVariables: {
+      primaryColor: isDark ? '#1e3a5f' : '#dbeafe',
+      primaryBorderColor: isDark ? '#60a5fa' : '#1e5fa0',
+      primaryTextColor: isDark ? '#c8dff5' : '#1e3a5f',
+      secondaryColor: isDark ? '#1a2e1a' : '#d1fae5',
+      secondaryBorderColor: isDark ? '#34d399' : '#047857',
+      secondaryTextColor: isDark ? '#c8dff5' : '#1e3a5f',
+      tertiaryColor: isDark ? '#2e200a' : '#fef3c7',
+      tertiaryBorderColor: isDark ? '#fbbf24' : '#b45309',
+      tertiaryTextColor: isDark ? '#c8dff5' : '#1e3a5f',
+      lineColor: isDark ? '#6a97c8' : '#8fadc8',
+      fontSize: '15px',
+      fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+      noteBkgColor: isDark ? '#1c2f47' : '#fefce8',
+      noteTextColor: isDark ? '#c8dff5' : '#1e3a5f',
+      noteBorderColor: isDark ? '#fbbf24' : '#b45309',
+    }
+  });
+</script>
+
+<script>
+  function updateZoomState(wrap) {
+    var t = wrap.querySelector('.mermaid');
+    wrap.classList.toggle('is-zoomed', parseFloat(t.dataset.zoom || '1') > 1);
+  }
+
+  function zoomDiagram(btn, factor) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var t = wrap.querySelector('.mermaid');
+    var next = Math.min(Math.max(parseFloat(t.dataset.zoom || '1') * factor, 0.3), 5);
+    t.dataset.zoom = next;
+    t.style.transform = 'scale(' + next + ')';
+    updateZoomState(wrap);
+  }
+
+  function resetZoom(btn) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var t = wrap.querySelector('.mermaid');
+    t.dataset.zoom = '1';
+    t.style.transform = 'scale(1)';
+    updateZoomState(wrap);
+  }
+
+  document.querySelectorAll('.mermaid-wrap').forEach(function(wrap) {
+    wrap.addEventListener('wheel', function(e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      var t = wrap.querySelector('.mermaid');
+      var factor = e.deltaY < 0 ? 1.1 : 0.9;
+      var next = Math.min(Math.max(parseFloat(t.dataset.zoom || '1') * factor, 0.3), 5);
+      t.dataset.zoom = next;
+      t.style.transform = 'scale(' + next + ')';
+      updateZoomState(wrap);
+    }, { passive: false });
+
+    var startX, startY, scrollL, scrollT;
+    wrap.addEventListener('mousedown', function(e) {
+      if (e.target.closest('.zoom-controls')) return;
+      if (parseFloat(wrap.querySelector('.mermaid').dataset.zoom || '1') <= 1) return;
+      wrap.classList.add('is-panning');
+      startX = e.clientX; startY = e.clientY;
+      scrollL = wrap.scrollLeft; scrollT = wrap.scrollTop;
+    });
+    window.addEventListener('mousemove', function(e) {
+      if (!wrap.classList.contains('is-panning')) return;
+      wrap.scrollLeft = scrollL - (e.clientX - startX);
+      wrap.scrollTop = scrollT - (e.clientY - startY);
+    });
+    window.addEventListener('mouseup', function() {
+      wrap.classList.remove('is-panning');
+    });
+  });
+</script>
+
+</body>
+</html>
