@@ -1,0 +1,24 @@
+---
+name: Test
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - README.md
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    strategy:
+      matrix:
+        ruby-version: ["3.2", "3.3", "3.4"]
+    name: test (ruby ${{ matrix.ruby-version }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+      - name: Run tests
+        run: bundle exec rake test

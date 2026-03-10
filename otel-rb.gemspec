@@ -35,6 +35,7 @@ Gem::Specification.new do |spec|
 
   # Logs — intentionally NOT listed; loaded only if present at runtime
 
+  spec.add_development_dependency 'bundler-audit',      '~> 0.9'
   spec.add_development_dependency 'minitest',           '~> 5.25'
   spec.add_development_dependency 'minitest-reporters', '~> 1.7'
   spec.add_development_dependency 'rack',               '~> 3.0'

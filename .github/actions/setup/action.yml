@@ -1,0 +1,29 @@
+---
+name: "Setup"
+description: "Sets up the Ruby environment for otel-rb"
+inputs:
+  ruby-version:
+    description: "Ruby version override (skips mise when set)"
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Install mise
+      if: ${{ inputs.ruby-version == '' }}
+      uses: jdx/mise-action@v2
+      with:
+        install: true
+        cache: true
+    - name: Set up Ruby (version override)
+      if: ${{ inputs.ruby-version != '' }}
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+    - name: Cache Ruby gems
+      uses: actions/cache@v4
+      with:
+        path: vendor/bundle
+        key: ${{ runner.os }}-${{ runner.arch }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+    - name: Install Ruby dependencies
+      shell: bash
+      run: bundle config set --local path 'vendor/bundle' && bundle install --jobs 4 --retry 3
