@@ -10,7 +10,9 @@ module Telemetry
     HTTP_SERVER_ACTIVE_REQUESTS  = 'http.server.active_requests'
 
     # Set by Rails router after routing (Rails 7.1+)
-    ROUTE_PATTERN_KEY = 'action_dispatch.route_uri_pattern'
+    ROUTE_PATTERN_KEY      = 'action_dispatch.route_uri_pattern'
+    # Set by Rails router after routing — contains :controller and :action keys
+    PATH_PARAMETERS_KEY    = 'action_dispatch.request.path_parameters'
 
     def initialize(app)
       @app = app
@@ -43,11 +45,14 @@ module Telemetry
           span.set_attribute('server.address',                request.host)
           span.set_attribute('server.port',                   request.port)
 
+          path_params = env[PATH_PARAMETERS_KEY]
           metric_attrs = {
-            'http.request.method' => request.request_method,
-            'http.route' => route,
-            'http.response.status_code' => status.to_s
-          }
+            'http.request.method'        => request.request_method,
+            'http.route'                 => route,
+            'http.response.status_code'  => status.to_s,
+            'rails.controller'           => path_params&.fetch(:controller, nil),
+            'rails.action'               => path_params&.fetch(:action, nil)
+          }.compact
 
           request_count&.add(1, attributes: metric_attrs)
           request_duration&.record(duration, attributes: metric_attrs)

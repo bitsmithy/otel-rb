@@ -56,9 +56,29 @@ With `integrate_tracing_logger: true`, setup also:
 
 - Assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/span ID correlation
 
-`Telemetry::Middleware` records span attributes per [OTel HTTP semantic conventions](https://opentelemetry.io/docs/specs/semconv/http/):
-`http.request.method`, `http.route`, `http.response.status_code`, `server.address`, `server.port`.
+`Telemetry::Middleware` traces every request and records metrics for each one.
+
+**Tracing** — one span per request, kind `:server`. Span attributes:
+
+| Attribute | Source |
+|-----------|--------|
+| `http.request.method` | HTTP verb |
+| `http.route` | `action_dispatch.route_uri_pattern` (Rails 7.1+), falls back to raw path |
+| `http.response.status_code` | Response status |
+| `server.address` | Request host |
+| `server.port` | Request port |
+
 5xx responses set span status to `ERROR`. 4xx do not.
+
+**Metrics** — three instruments recorded per request:
+
+| Instrument | Type | Unit | Attributes |
+|-----------|------|------|-----------|
+| `http.server.request.count` | counter | `{request}` | `http.request.method`, `http.route`, `http.response.status_code`, `rails.controller`*, `rails.action`* |
+| `http.server.request.duration` | histogram | `s` | same as above |
+| `http.server.active_requests` | up-down counter | `{request}` | `http.request.method` |
+
+\* `rails.controller` and `rails.action` are set from `action_dispatch.request.path_parameters` and are omitted when the middleware is used outside Rails.
 
 ### Non-Rails / plain Rack
 
@@ -72,11 +92,13 @@ use Telemetry::Middleware # Mount the middleware
 
 ## Signals
 
-| Signal | Availability | Gems |
-|--------|-------------|------|
-| Traces | Always | `opentelemetry-sdk`, `opentelemetry-exporter-otlp` |
-| Metrics | Graceful degradation if missing | `opentelemetry-metrics-sdk`, `opentelemetry-exporter-otlp-metrics` |
-| Logs | Optional no-op if absent | `opentelemetry-logs-sdk`, `opentelemetry-exporter-otlp-logs` |
+All three signals are included as hard gem dependencies and wired on every `Telemetry.setup` call.
+
+| Signal | Gems |
+|--------|------|
+| Traces | `opentelemetry-sdk`, `opentelemetry-exporter-otlp` |
+| Metrics | `opentelemetry-metrics-sdk`, `opentelemetry-exporter-otlp-metrics` |
+| Logs | `opentelemetry-logs-sdk`, `opentelemetry-exporter-otlp-logs` |
 
 ## Tracing
 
@@ -226,8 +248,6 @@ Available levels: `debug`, `info`, `warn`, `error`, `fatal`.
 
 When Rails is present, calls also delegate to `Rails.logger` by default. Pass `rails_logger: false` to suppress for a specific call.
 
-When the OTel Logs SDK (`opentelemetry-logs-sdk`) is not installed, OTel output is a no-op after a one-time warning. Rails.logger delegation is unaffected.
-
 ## TraceFormatter
 
 **TraceFormatter (or `Telemetry.log` / `Telemetry.logger`) is required for log-trace correlation.** Plain `Rails.logger` without TraceFormatter emits no trace/span IDs — those logs are impossible to correlate with your traces in an observability backend.
@@ -251,6 +271,22 @@ All public methods raise `Telemetry::NotSetupError` if called before `Telemetry.
 Telemetry.trace("x") { }
 # => Telemetry::NotSetupError: Telemetry.trace called before Telemetry.setup
 ```
+
+## Testing
+
+Call `Telemetry.test_mode!` once in your test helper. It disables the `at_exit` shutdown hook and installs a `before` callback that resets all Telemetry state between tests, so each test starts clean.
+
+```ruby
+# test/test_helper.rb
+ENV['OTEL_METRICS_EXPORTER'] ||= 'none'  # skip metric export in tests
+
+require 'opentelemetry/sdk'
+require 'telemetry'
+
+Telemetry.test_mode!
+```
+
+`OTEL_METRICS_EXPORTER=none` tells the OTel metrics SDK to skip exporter configuration entirely, suppressing the connection-refused noise that would otherwise appear when there is no collector running locally.
 
 ## License
 

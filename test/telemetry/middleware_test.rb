@@ -167,6 +167,33 @@ class MiddlewareTest < Minitest::Test
     assert_equal 'GET', attrs['http.request.method']
   end
 
+  def test_controller_and_action_attributes_on_rails_request
+    inner = lambda { |env|
+      env[Telemetry::Middleware::PATH_PARAMETERS_KEY] = { controller: 'users', action: 'show' }
+      [200, {}, ['OK']]
+    }
+    mw, _exporter, meter_provider = middleware_with_metrics(inner)
+    Rack::MockRequest.new(mw).get('/users/1')
+
+    streams = metric_streams(meter_provider)
+    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    attrs = dur_stream.instance_variable_get(:@data_points).keys.first
+    assert_equal 'users', attrs['rails.controller']
+    assert_equal 'show',  attrs['rails.action']
+  end
+
+  def test_controller_and_action_absent_outside_rails
+    # No PATH_PARAMETERS_KEY set — non-Rails Rack app
+    mw, _exporter, meter_provider = middleware_with_metrics
+    Rack::MockRequest.new(mw).get('/ping')
+
+    streams = metric_streams(meter_provider)
+    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    attrs = dur_stream.instance_variable_get(:@data_points).keys.first
+    refute attrs.key?('rails.controller'), 'rails.controller should be absent without Rails routing'
+    refute attrs.key?('rails.action'),     'rails.action should be absent without Rails routing'
+  end
+
   def test_active_requests_metric_recorded
     mw, _exporter, meter_provider = middleware_with_metrics
     Rack::MockRequest.new(mw).get('/ping')

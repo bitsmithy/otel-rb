@@ -25,15 +25,18 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'opentelemetry-exporter-otlp', '~> 0.28'
   spec.add_dependency 'opentelemetry-sdk',           '~> 1.0'
 
-  # Metrics — declared as required; graceful LoadError in setup if somehow missing
+  # Metrics
   spec.add_dependency 'opentelemetry-exporter-otlp-metrics', '~> 0.1'
   spec.add_dependency 'opentelemetry-metrics-api',           '~> 0.1'
   spec.add_dependency 'opentelemetry-metrics-sdk',           '~> 0.1'
 
+  # Logs
+  spec.add_dependency 'opentelemetry-exporter-otlp-logs', '~> 0.1'
+  spec.add_dependency 'opentelemetry-logs-api',            '~> 0.1'
+  spec.add_dependency 'opentelemetry-logs-sdk',            '~> 0.1'
+
   # Semantic conventions
   spec.add_dependency 'opentelemetry-semantic_conventions', '~> 1.0'
-
-  # Logs — intentionally NOT listed; loaded only if present at runtime
 
   spec.add_development_dependency 'bundler-audit',      '~> 0.9'
   spec.add_development_dependency 'minitest',           '~> 5.25'

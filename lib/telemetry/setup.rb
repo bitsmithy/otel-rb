@@ -17,19 +17,19 @@ module Telemetry
         OpenTelemetry::SDK::Trace::Export::BatchSpanProcessor.new(trace_exporter)
       )
 
-      # --- Metrics (graceful degradation if SDK missing) ---
+      # --- Metrics ---
       meter_provider = setup_metrics(config, resource)
 
-      # --- Logs (silent no-op if gems not installed) ---
+      # --- Logs ---
       setup_logs(config, resource)
 
       # --- Globals ---
       OpenTelemetry.tracer_provider = tracer_provider
-      OpenTelemetry.meter_provider  = meter_provider if meter_provider
+      OpenTelemetry.meter_provider  = meter_provider
       OpenTelemetry.propagation     = composite_propagator
 
       tracer = tracer_provider.tracer(config.service_name, config.service_version)
-      meter  = meter_provider&.meter(config.service_name, version: config.service_version)
+      meter  = meter_provider.meter(config.service_name, version: config.service_version)
 
       { shutdown: build_shutdown(tracer_provider, meter_provider), tracer: tracer, meter: meter }
     end
@@ -57,16 +57,13 @@ module Telemetry
       OpenTelemetry::SDK::Metrics::MeterProvider.new(resource: resource).tap do |mp|
         mp.add_metric_reader(reader)
       end
-    rescue LoadError
-      warn '[Telemetry] opentelemetry-metrics-sdk not available; metrics disabled'
-      nil
     end
 
     private_class_method def self.setup_logs(config, resource)
       require 'opentelemetry-logs-sdk'
       require 'opentelemetry-exporter-otlp-logs'
       require 'opentelemetry/logs'
-      require 'opentelemetry/exporter/otlp/logs'
+      require 'opentelemetry/exporter/otlp_logs'
 
       log_exporter    = OpenTelemetry::Exporter::OTLP::Logs::LogsExporter.new(**endpoint_opts(config))
       logger_provider = OpenTelemetry::SDK::Logs::LoggerProvider.new(resource: resource)
@@ -74,8 +71,6 @@ module Telemetry
         OpenTelemetry::SDK::Logs::Export::BatchLogRecordProcessor.new(log_exporter)
       )
       OpenTelemetry.logger_provider = logger_provider
-    rescue LoadError
-      nil
     end
 
     private_class_method def self.composite_propagator
@@ -90,12 +85,8 @@ module Telemetry
     private_class_method def self.build_shutdown(tracer_provider, meter_provider)
       lambda do
         tracer_provider.shutdown
-        meter_provider&.shutdown
-        if OpenTelemetry.respond_to?(:logger_provider) &&
-           (lp = OpenTelemetry.logger_provider) &&
-           !lp.is_a?(OpenTelemetry::Internal::ProxyLoggerProvider)
-          lp.shutdown
-        end
+        meter_provider.shutdown
+        OpenTelemetry.logger_provider.shutdown
       end
     end
   end
