@@ -16,17 +16,17 @@ class ConfigTest < Minitest::Test
 
   def test_explicit_values
     config = Telemetry::Config.new(
-      service_name:              'my-app',
-      service_namespace:         'my-org',
-      service_version:           'abc123',
-      endpoint:                  'http://localhost:4318',
-      integrate_tracing_logger:  true
+      service_name: 'my-app',
+      service_namespace: 'my-org',
+      service_version: 'abc123',
+      endpoint: 'http://localhost:4318',
+      integrate_tracing_logger: true
     )
     assert_equal 'my-app',               config.service_name
     assert_equal 'my-org',               config.service_namespace
     assert_equal 'abc123',               config.service_version
     assert_equal 'http://localhost:4318', config.endpoint
-    assert_equal true,                   config.integrate_tracing_logger
+    assert_equal true, config.integrate_tracing_logger
   end
 
   def test_no_log_level

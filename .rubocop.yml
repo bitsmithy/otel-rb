@@ -3,6 +3,7 @@ AllCops:
   TargetRubyVersion: 3.2
   Exclude:
     - 'vendor/**/*'
+  SuggestExtensions: false
 
 Style/Documentation:
   Enabled: false
@@ -15,6 +16,10 @@ Metrics/AbcSize:
 
 Metrics/BlockLength:
   Enabled: false
+
+Metrics/ClassLength:
+  Exclude:
+    - 'test/**/*'
 
 Naming/VariableNumber:
   Enabled: false

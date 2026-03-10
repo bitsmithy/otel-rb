@@ -36,7 +36,7 @@ class SetupTest < Minitest::Test
   # --- NotSetupError before setup ---
 
   def test_not_setup_error_trace
-    assert_raises(Telemetry::NotSetupError) { Telemetry.trace('op') {} }
+    assert_raises(Telemetry::NotSetupError) { Telemetry.trace('op') { nil } }
   end
 
   def test_not_setup_error_counter
@@ -62,14 +62,18 @@ class SetupTest < Minitest::Test
 
     app_config = Object.new
     app_config.define_singleton_method(:middleware) { middleware_stack }
-    rails_app  = Object.new
+    rails_app = Object.new
     rails_app.define_singleton_method(:config) { app_config }
 
     rails_logger = Object.new
     rails_logger.define_singleton_method(:formatter)  { nil }
-    rails_logger.define_singleton_method(:formatter=) { |_f| }
+    rails_logger.define_singleton_method(:formatter=) { |_f| nil }
 
-    fake_rails = Module.new { def self.application; end; def self.logger; end }
+    fake_rails = Module.new do
+      def self.application; end
+
+      def self.logger; end
+    end
 
     stub_const(:Rails, fake_rails) do
       fake_rails.stub(:application, rails_app) do
@@ -86,18 +90,22 @@ class SetupTest < Minitest::Test
   def test_trace_formatter_not_assigned_by_default
     assigned_formatter = :not_called
     middleware_stack = Object.new
-    middleware_stack.define_singleton_method(:use) { |*_args| }
+    middleware_stack.define_singleton_method(:use) { |*_args| nil }
 
     app_config = Object.new
     app_config.define_singleton_method(:middleware) { middleware_stack }
-    rails_app  = Object.new
+    rails_app = Object.new
     rails_app.define_singleton_method(:config) { app_config }
 
     rails_logger = Object.new
     rails_logger.define_singleton_method(:formatter)  { nil }
     rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
 
-    fake_rails = Module.new { def self.application; end; def self.logger; end }
+    fake_rails = Module.new do
+      def self.application; end
+
+      def self.logger; end
+    end
 
     stub_const(:Rails, fake_rails) do
       fake_rails.stub(:application, rails_app) do
@@ -113,18 +121,22 @@ class SetupTest < Minitest::Test
   def test_trace_formatter_assigned_when_integrate_tracing_logger_true
     assigned_formatter = nil
     middleware_stack = Object.new
-    middleware_stack.define_singleton_method(:use) { |*_args| }
+    middleware_stack.define_singleton_method(:use) { |*_args| nil }
 
     app_config = Object.new
     app_config.define_singleton_method(:middleware) { middleware_stack }
-    rails_app  = Object.new
+    rails_app = Object.new
     rails_app.define_singleton_method(:config) { app_config }
 
     rails_logger = Object.new
     rails_logger.define_singleton_method(:formatter)  { nil }
     rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
 
-    fake_rails = Module.new { def self.application; end; def self.logger; end }
+    fake_rails = Module.new do
+      def self.application; end
+
+      def self.logger; end
+    end
 
     stub_const(:Rails, fake_rails) do
       fake_rails.stub(:application, rails_app) do
@@ -145,5 +157,4 @@ class SetupTest < Minitest::Test
     assert_respond_to result[:tracer], :in_span
     assert_kind_of Proc, result[:shutdown]
   end
-
 end

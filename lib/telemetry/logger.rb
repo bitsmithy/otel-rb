@@ -18,8 +18,8 @@ module Telemetry
     # https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber
     SEVERITY = {
       debug: 5,
-      info:  9,
-      warn:  13,
+      info: 9,
+      warn: 13,
       error: 17,
       fatal: 21
     }.freeze
@@ -76,11 +76,11 @@ module Telemetry
 
       @otel_logger.on_emit(
         severity_number: SEVERITY[level],
-        severity_text:   level.to_s.upcase,
-        body:            message,
-        trace_id:        span_context.valid? ? span_context.trace_id : nil,
-        span_id:         span_context.valid? ? span_context.span_id  : nil,
-        trace_flags:     span_context.valid? ? span_context.trace_flags : nil,
+        severity_text: level.to_s.upcase,
+        body: message,
+        trace_id: span_context.valid? ? span_context.trace_id : nil,
+        span_id: span_context.valid? ? span_context.span_id : nil,
+        trace_flags: span_context.valid? ? span_context.trace_flags : nil,
         observed_timestamp: Time.now
       )
     end

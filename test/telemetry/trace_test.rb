@@ -33,7 +33,7 @@ class TraceTest < Minitest::Test
   end
 
   def test_trace_attrs
-    Telemetry.trace('test.op', attrs: { 'foo' => 'bar' }) { |_span| }
+    Telemetry.trace('test.op', attrs: { 'foo' => 'bar' }) { |_span| nil }
     span = @exporter.finished_spans.first
     refute_nil span, 'expected a finished span'
     assert_equal 'bar', span.attributes['foo']
@@ -57,7 +57,7 @@ class TraceTest < Minitest::Test
 
   def test_nested_trace_is_child_span
     Telemetry.trace('parent') do |_parent_span|
-      Telemetry.trace('child') { |_child_span| }
+      Telemetry.trace('child') { |_child_span| nil }
     end
 
     spans  = @exporter.finished_spans

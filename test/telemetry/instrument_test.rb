@@ -82,7 +82,10 @@ class InstrumentTest < Minitest::Test
   end
 
   def test_counter_with_value_attrs_unit_and_description
-    assert_silent { Telemetry.counter('rec.counter.full.attrs', 1, 'payment.method' => 'card', unit: '{order}', description: 'Orders placed') }
+    assert_silent do
+      Telemetry.counter('rec.counter.full.attrs', 1, 'payment.method' => 'card', unit: '{order}',
+                                                     description: 'Orders placed')
+    end
   end
 
   def test_histogram_with_value
@@ -94,7 +97,10 @@ class InstrumentTest < Minitest::Test
   end
 
   def test_histogram_with_value_attrs_unit_and_description
-    assert_silent { Telemetry.histogram('rec.histogram.full.attrs', 0.42, 'queue' => 'default', unit: 's', description: 'Order processing time') }
+    assert_silent do
+      Telemetry.histogram('rec.histogram.full.attrs', 0.42, 'queue' => 'default', unit: 's',
+                                                            description: 'Order processing time')
+    end
   end
 
   def test_gauge_with_value
@@ -106,7 +112,10 @@ class InstrumentTest < Minitest::Test
   end
 
   def test_gauge_with_value_attrs_unit_and_description
-    assert_silent { Telemetry.gauge('rec.gauge.full.attrs', 17, 'queue' => 'default', unit: '{job}', description: 'Jobs waiting in queue') }
+    assert_silent do
+      Telemetry.gauge('rec.gauge.full.attrs', 17, 'queue' => 'default', unit: '{job}',
+                                                  description: 'Jobs waiting in queue')
+    end
   end
 
   def test_up_down_counter_with_value
@@ -114,15 +123,22 @@ class InstrumentTest < Minitest::Test
   end
 
   def test_up_down_counter_with_positive_value_unit_and_description
-    assert_silent { Telemetry.up_down_counter('rec.updown.full.pos', 1, unit: '{connection}', description: 'Active DB connections') }
+    assert_silent do
+      Telemetry.up_down_counter('rec.updown.full.pos', 1, unit: '{connection}', description: 'Active DB connections')
+    end
   end
 
   def test_up_down_counter_with_negative_value_unit_and_description
-    assert_silent { Telemetry.up_down_counter('rec.updown.full.neg', -1, unit: '{connection}', description: 'Active DB connections') }
+    assert_silent do
+      Telemetry.up_down_counter('rec.updown.full.neg', -1, unit: '{connection}', description: 'Active DB connections')
+    end
   end
 
   def test_up_down_counter_with_value_attrs_unit_and_description
-    assert_silent { Telemetry.up_down_counter('rec.updown.full.attrs', 1, 'pool' => 'primary', unit: '{connection}', description: 'Active DB connections') }
+    assert_silent do
+      Telemetry.up_down_counter('rec.updown.full.attrs', 1, 'pool' => 'primary', unit: '{connection}',
+                                                            description: 'Active DB connections')
+    end
   end
 
   # --- Histogram handle methods ---

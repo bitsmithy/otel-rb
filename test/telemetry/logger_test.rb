@@ -106,5 +106,4 @@ class LoggerTest < Minitest::Test
 
     assert_empty received
   end
-
 end

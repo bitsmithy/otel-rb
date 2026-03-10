@@ -28,35 +28,12 @@ module Telemetry
       OpenTelemetry::Context.with_current(context) do
         Telemetry.tracer.in_span("#{request.request_method} #{request.path}", kind: :server) do |span|
           active_requests&.add(1, attributes: { 'http.request.method' => request.request_method })
-          start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-          status, headers, body = @app.call(env)
+          status, headers, body, duration = call_inner(env)
+          route = env[ROUTE_PATTERN_KEY] || request.path
 
-          duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
-          route    = env[ROUTE_PATTERN_KEY] || request.path
-
-          span.name = "#{request.request_method} #{route}"
-
-          span.status = OpenTelemetry::Trace::Status.error("HTTP #{status}") if status >= 500
-
-          span.set_attribute('http.request.method',           request.request_method)
-          span.set_attribute('http.route',                    route)
-          span.set_attribute('http.response.status_code',     status)
-          span.set_attribute('server.address',                request.host)
-          span.set_attribute('server.port',                   request.port)
-
-          path_params = env[PATH_PARAMETERS_KEY]
-          metric_attrs = {
-            'http.request.method'        => request.request_method,
-            'http.route'                 => route,
-            'http.response.status_code'  => status.to_s,
-            'rails.controller'           => path_params&.fetch(:controller, nil),
-            'rails.action'               => path_params&.fetch(:action, nil)
-          }.compact
-
-          request_count&.add(1, attributes: metric_attrs)
-          request_duration&.record(duration, attributes: metric_attrs)
-          active_requests&.add(-1, attributes: { 'http.request.method' => request.request_method })
+          annotate_span(span, request, route, status)
+          record_metrics(request, route, status, duration, env)
 
           [status, headers, body]
         end
@@ -64,6 +41,38 @@ module Telemetry
     end
 
     private
+
+    def call_inner(env)
+      start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      status, headers, body = @app.call(env)
+      duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
+      [status, headers, body, duration]
+    end
+
+    def annotate_span(span, request, route, status)
+      span.name = "#{request.request_method} #{route}"
+      span.status = OpenTelemetry::Trace::Status.error("HTTP #{status}") if status >= 500
+      span.set_attribute('http.request.method',       request.request_method)
+      span.set_attribute('http.route',                route)
+      span.set_attribute('http.response.status_code', status)
+      span.set_attribute('server.address',            request.host)
+      span.set_attribute('server.port',               request.port)
+    end
+
+    def record_metrics(request, route, status, duration, env)
+      path_params = env[PATH_PARAMETERS_KEY]
+      metric_attrs = {
+        'http.request.method' => request.request_method,
+        'http.route' => route,
+        'http.response.status_code' => status.to_s,
+        'rails.controller' => path_params&.fetch(:controller, nil),
+        'rails.action' => path_params&.fetch(:action, nil)
+      }.compact
+
+      request_count&.add(1, attributes: metric_attrs)
+      request_duration&.record(duration, attributes: metric_attrs)
+      active_requests&.add(-1, attributes: { 'http.request.method' => request.request_method })
+    end
 
     def init_instruments
       meter = Telemetry.meter

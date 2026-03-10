@@ -73,15 +73,15 @@ module Telemetry
       # Increments the counter by +n+ (default 1).
       # @param n [Numeric]
       # @param attrs [Hash] metric attributes
-      def increment(n = 1, attrs = {})
-        @instrument.add(n, attributes: attrs)
+      def increment(amount = 1, attrs = {})
+        @instrument.add(amount, attributes: attrs)
       end
 
       # Decrements the counter by +n+ (default 1).
       # @param n [Numeric]
       # @param attrs [Hash] metric attributes
-      def decrement(n = 1, attrs = {})
-        @instrument.add(-n, attributes: attrs)
+      def decrement(amount = 1, attrs = {})
+        @instrument.add(-amount, attributes: attrs)
       end
 
       # @api private
