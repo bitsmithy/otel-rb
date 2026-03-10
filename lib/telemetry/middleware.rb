@@ -25,7 +25,7 @@ module Telemetry
 
       OpenTelemetry::Context.with_current(context) do
         Telemetry.tracer.in_span("#{request.request_method} #{request.path}", kind: :server) do |span|
-          active_requests&.add(1, 'http.request.method' => request.request_method)
+          active_requests&.add(1, attributes: { 'http.request.method' => request.request_method })
           start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
           status, headers, body = @app.call(env)
@@ -49,9 +49,9 @@ module Telemetry
             'http.response.status_code' => status.to_s
           }
 
-          request_count&.add(1, **metric_attrs)
-          request_duration&.record(duration, **metric_attrs)
-          active_requests&.add(-1, 'http.request.method' => request.request_method)
+          request_count&.add(1, attributes: metric_attrs)
+          request_duration&.record(duration, attributes: metric_attrs)
+          active_requests&.add(-1, attributes: { 'http.request.method' => request.request_method })
 
           [status, headers, body]
         end

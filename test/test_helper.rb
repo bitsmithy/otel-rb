@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+# Suppress the "otlp metrics exporter cannot be configured" warning that fires
+# when opentelemetry-metrics-sdk tries to auto-configure an OTLP exporter via
+# OpenTelemetry::SDK.configure. "none" tells the SDK to skip metric export entirely.
+ENV['OTEL_METRICS_EXPORTER'] ||= 'none'
+
 require 'minitest/autorun'
 require 'minitest/reporters'
 require 'opentelemetry/sdk'
