@@ -4,6 +4,16 @@ require 'minitest/autorun'
 require 'minitest/mock'
 require 'telemetry/test'
 
+# Per-test OTel isolation: reset the SDK and re-run Telemetry.setup so each
+# test starts with fresh tracer/meter/logger state.
+Minitest::Test.prepend(Module.new do
+  def before_setup
+    OpenTelemetry::SDK.configure
+    Telemetry.setup
+    super
+  end
+end)
+
 module Minitest
   class Test
     private

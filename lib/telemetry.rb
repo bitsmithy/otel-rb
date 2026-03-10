@@ -75,11 +75,10 @@ module Telemetry
     def setup(**)
       config  = Config.new(**)
       result  = Setup.call(config)
-      @tracer               = result[:tracer]
-      @meter                = result[:meter]
-      @logger               = Logger.new
-      @instruments          = nil
-      @rails_middleware_wired = nil
+      @tracer      = result[:tracer]
+      @meter       = result[:meter]
+      @logger      = Logger.new
+      @instruments = nil
 
       if defined?(Rails)
         wire_rails_middleware
@@ -205,10 +204,9 @@ module Telemetry
     # Enables test mode for the entire process:
     #   1. Suppresses at_exit registration.
     #   2. Suppresses OTLP exporters via OTEL_*_EXPORTER env vars.
-    #   3. Installs a Minitest before_setup hook that resets OTel and
-    #      re-runs Telemetry.setup before each test.
-    #   4. Defines Telemetry.reset! for tests that verify not-setup behavior.
-    # Auto-activated via require "telemetry/test" in test_helper.rb.
+    #   3. Defines Telemetry.reset! for tests that verify not-setup behavior.
+    # Auto-activated via require "telemetry/test", or automatically when
+    # RAILS_ENV or RACK_ENV is "test".
     # @api private
     def test_mode!
       return if @test_mode
@@ -220,30 +218,18 @@ module Telemetry
       end
 
       define_singleton_method(:reset!) do
-        @tracer               = nil
-        @meter                = nil
-        @logger               = nil
-        @shutdown             = nil
-        @instruments          = nil
-        @rails_middleware_wired = nil
+        @tracer      = nil
+        @meter       = nil
+        @logger      = nil
+        @shutdown    = nil
+        @instruments = nil
       end
-
-      Minitest::Test.prepend(Module.new do
-        def before_setup
-          OpenTelemetry::SDK.configure
-          Telemetry.setup
-          super
-        end
-      end)
     end
 
     private
 
     def wire_rails_middleware
-      return if @rails_middleware_wired
-
       Rails.application.config.middleware.use(Middleware)
-      @rails_middleware_wired = true
     end
 
     def wire_tracing_logger
@@ -256,3 +242,5 @@ module Telemetry
     end
   end
 end
+
+require_relative 'telemetry/test' if %w[test].include?(ENV.fetch('RAILS_ENV', nil) || ENV.fetch('RACK_ENV', nil))
