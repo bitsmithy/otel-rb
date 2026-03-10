@@ -7,11 +7,8 @@ ENV['OTEL_METRICS_EXPORTER'] ||= 'none'
 
 require 'minitest/autorun'
 require 'minitest/mock'
-require 'minitest/reporters'
 require 'opentelemetry/sdk'
 require 'telemetry'
-
-Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
 
 # One call disables at_exit and installs auto-reset before every test.
 Telemetry.test_mode!

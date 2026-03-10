@@ -19,10 +19,8 @@ GEM
   specs:
     addressable (2.8.9)
       public_suffix (>= 2.0.2, < 8.0)
-    ansi (1.5.0)
     ast (2.4.3)
     bigdecimal (4.0.1)
-    builder (3.3.0)
     bundler-audit (0.9.3)
       bundler (>= 1.2.0)
       thor (~> 1.0)
@@ -69,11 +67,6 @@ GEM
       drb (~> 2.0)
       prism (~> 1.5)
     minitest-mock (5.27.0)
-    minitest-reporters (1.7.1)
-      ansi
-      builder
-      minitest (>= 5.0)
-      ruby-progressbar
     opentelemetry-api (1.8.0)
       logger
     opentelemetry-common (0.23.0)
@@ -173,7 +166,6 @@ DEPENDENCIES
   bundler-audit (~> 0.9)
   minitest (~> 6.0)
   minitest-mock (~> 5.0)
-  minitest-reporters (~> 1.7)
   otel-rb!
   rack (~> 3.0)
   rack-test (~> 2.0)
