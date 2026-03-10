@@ -1,10 +1,5 @@
 # frozen_string_literal: true
 
-# opentelemetry-metrics-sdk patches OpenTelemetry::SDK::Configurator and tries to
-# auto-configure an OTLP metrics exporter when OpenTelemetry::SDK.configure is called.
-# Setting this to "none" suppresses that attempt so tests don't emit spurious warnings.
-ENV['OTEL_METRICS_EXPORTER'] ||= 'none'
-
 require 'minitest/autorun'
 require 'minitest/mock'
 require 'opentelemetry/sdk'

@@ -149,6 +149,14 @@ class SetupTest < Minitest::Test
     assert_instance_of Telemetry::TraceFormatter, assigned_formatter
   end
 
+  # --- test_mode! env vars ---
+
+  def test_test_mode_sets_exporter_env_vars_to_none
+    %w[OTEL_TRACES_EXPORTER OTEL_METRICS_EXPORTER OTEL_LOGS_EXPORTER].each do |var|
+      assert_equal 'none', ENV.fetch(var, nil), "Expected #{var} to be 'none' in test mode"
+    end
+  end
+
   # --- Telemetry::Setup internal contract ---
 
   def test_setup_module_returns_tracer_and_shutdown

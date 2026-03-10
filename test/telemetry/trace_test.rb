@@ -21,7 +21,8 @@ class TraceTest < Minitest::Test
     tracer = OpenTelemetry.tracer_provider.tracer('test-service')
     # Inject the tracer directly via the module's class-level ivar
     Telemetry.instance_variable_set(:@tracer, tracer)
-    # Inject a minimal logger so Telemetry.logger doesn't raise
+    # Set up a minimal logger_provider so Logger.new can build its OTel logger
+    OpenTelemetry.logger_provider = OpenTelemetry::SDK::Logs::LoggerProvider.new
     Telemetry.instance_variable_set(:@logger, Telemetry::Logger.new)
   end
 

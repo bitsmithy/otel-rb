@@ -5,9 +5,6 @@ require 'test_helper'
 class LoggerTest < Minitest::Test
   def setup
     Telemetry.setup(service_name: 'test-service')
-    # Exhaust the one-time "OTel Logs SDK not available" warning so individual
-    # tests don't observe unexpected stderr output.
-    capture_io { Telemetry.log(:info, 'warmup') }
   end
 
   # --- Telemetry.logger ---
@@ -42,19 +39,14 @@ class LoggerTest < Minitest::Test
     end
   end
 
-  # --- OTel Logs SDK missing (always the case in this test bundle) ---
+  # --- OTel emit works (SDK is a hard dependency) ---
 
-  def test_otel_missing_warn_emitted_once
-    # Fresh logger instance so @otel_warned starts false
+  def test_otel_emit_does_not_warn
     Telemetry.reset!
     Telemetry.setup(service_name: 'test-service')
 
-    _out, err = capture_io { Telemetry.log(:info, 'first') }
-    assert_match(/OTel Logs SDK not available/, err)
-
-    # Second call must not warn again
-    _out2, err2 = capture_io { Telemetry.log(:info, 'second') }
-    assert_empty err2
+    _out, err = capture_io { Telemetry.log(:info, 'hello') }
+    assert_empty err
   end
 
   # --- rails_logger: delegation ---

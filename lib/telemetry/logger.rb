@@ -25,8 +25,7 @@ module Telemetry
     }.freeze
 
     def initialize
-      @otel_logger  = build_otel_logger
-      @otel_warned  = false
+      @otel_logger = build_otel_logger
     end
 
     # @param message [String]
@@ -67,11 +66,6 @@ module Telemetry
     end
 
     def emit_otel(level, message)
-      if @otel_logger.nil?
-        warn_otel_missing unless @otel_warned
-        return
-      end
-
       span_context = OpenTelemetry::Trace.current_span.context
 
       @otel_logger.on_emit(
@@ -85,18 +79,8 @@ module Telemetry
       )
     end
 
-    def warn_otel_missing
-      Kernel.warn '[Telemetry] OTel Logs SDK not available; Telemetry.logger OTel output is a no-op'
-      @otel_warned = true
-    end
-
     def build_otel_logger
-      lp = OpenTelemetry.logger_provider
-      return nil if lp.is_a?(OpenTelemetry::Internal::ProxyLoggerProvider)
-
-      lp.logger('telemetry', version: Telemetry::VERSION)
-    rescue StandardError
-      nil
+      OpenTelemetry.logger_provider.logger(name: 'telemetry', version: Telemetry::VERSION)
     end
   end
 end

@@ -208,6 +208,10 @@ module Telemetry
     def test_mode!
       @test_mode = true
 
+      %w[OTEL_TRACES_EXPORTER OTEL_METRICS_EXPORTER OTEL_LOGS_EXPORTER].each do |var|
+        ENV[var] ||= 'none'
+      end
+
       require 'minitest'
       Minitest::Test.prepend(Module.new do
         def before_setup
