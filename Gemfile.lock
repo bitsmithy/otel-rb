@@ -26,6 +26,7 @@ GEM
     bundler-audit (0.9.3)
       bundler (>= 1.2.0)
       thor (~> 1.0)
+    drb (2.2.3)
     google-protobuf (4.34.0)
       bigdecimal
       rake (~> 13.3)
@@ -64,7 +65,9 @@ GEM
     logger (1.7.0)
     mcp (0.8.0)
       json-schema (>= 4.1)
-    minitest (5.27.0)
+    minitest (6.0.2)
+      drb (~> 2.0)
+      prism (~> 1.5)
     minitest-reporters (1.7.1)
       ansi
       builder
@@ -166,7 +169,7 @@ PLATFORMS
 
 DEPENDENCIES
   bundler-audit (~> 0.9)
-  minitest (~> 5.25)
+  minitest (~> 6.0)
   minitest-reporters (~> 1.7)
   otel-rb!
   rack (~> 3.0)
