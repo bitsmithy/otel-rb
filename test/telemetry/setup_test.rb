@@ -36,18 +36,22 @@ class SetupTest < Minitest::Test
   # --- NotSetupError before setup ---
 
   def test_not_setup_error_trace
+    Telemetry.reset!
     assert_raises(Telemetry::NotSetupError) { Telemetry.trace('op') { nil } }
   end
 
   def test_not_setup_error_counter
+    Telemetry.reset!
     assert_raises(Telemetry::NotSetupError) { Telemetry.counter('x') }
   end
 
   def test_not_setup_error_logger
+    Telemetry.reset!
     assert_raises(Telemetry::NotSetupError) { Telemetry.logger }
   end
 
   def test_not_setup_error_log
+    Telemetry.reset!
     assert_raises(Telemetry::NotSetupError) { Telemetry.log(:info, 'msg') }
   end
 
@@ -147,6 +151,16 @@ class SetupTest < Minitest::Test
     end
 
     assert_instance_of Telemetry::TraceFormatter, assigned_formatter
+  end
+
+  # --- test_mode! auto-setup ---
+
+  def test_before_setup_re_runs_setup_automatically
+    # before_setup (from test_mode!) already ran for this test, resetting state.
+    # Telemetry should be usable without the consumer calling setup in each test.
+    assert_respond_to Telemetry.tracer, :in_span
+    refute_nil Telemetry.meter
+    assert_instance_of Telemetry::Logger, Telemetry.logger
   end
 
   # --- test_mode! env vars ---

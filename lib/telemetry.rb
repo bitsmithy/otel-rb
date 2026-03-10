@@ -75,9 +75,11 @@ module Telemetry
     def setup(**)
       config  = Config.new(**)
       result  = Setup.call(config)
-      @tracer = result[:tracer]
-      @meter  = result[:meter]
-      @logger = Logger.new
+      @tracer               = result[:tracer]
+      @meter                = result[:meter]
+      @logger               = Logger.new
+      @instruments          = nil
+      @rails_middleware_wired = nil
 
       if defined?(Rails)
         wire_rails_middleware
@@ -192,7 +194,7 @@ module Telemetry
       logger.public_send(level, message, **)
     end
 
-    # OTel log emitter. No-ops (with a one-time warning) if the Logs SDK is absent.
+    # OTel log emitter.
     # @return [Telemetry::Logger]
     def logger
       raise NotSetupError, :logger unless @logger
@@ -202,39 +204,46 @@ module Telemetry
 
     # Enables test mode for the entire process:
     #   1. Suppresses at_exit registration.
-    #   2. Installs a Minitest before_setup hook for automatic state reset.
-    # Call once in test/test_helper.rb.
+    #   2. Suppresses OTLP exporters via OTEL_*_EXPORTER env vars.
+    #   3. Installs a Minitest before_setup hook that resets OTel and
+    #      re-runs Telemetry.setup before each test.
+    #   4. Defines Telemetry.reset! for tests that verify not-setup behavior.
+    # Auto-activated via require "telemetry/test" in test_helper.rb.
     # @api private
     def test_mode!
+      return if @test_mode
+
       @test_mode = true
 
       %w[OTEL_TRACES_EXPORTER OTEL_METRICS_EXPORTER OTEL_LOGS_EXPORTER].each do |var|
         ENV[var] ||= 'none'
       end
 
-      require 'minitest'
+      define_singleton_method(:reset!) do
+        @tracer               = nil
+        @meter                = nil
+        @logger               = nil
+        @shutdown             = nil
+        @instruments          = nil
+        @rails_middleware_wired = nil
+      end
+
       Minitest::Test.prepend(Module.new do
         def before_setup
           OpenTelemetry::SDK.configure
-          Telemetry.reset!
+          Telemetry.setup
           super
         end
       end)
     end
 
-    # @api private
-    def reset!
-      @tracer      = nil
-      @meter       = nil
-      @logger      = nil
-      @shutdown    = nil
-      @instruments = nil
-    end
-
     private
 
     def wire_rails_middleware
+      return if @rails_middleware_wired
+
       Rails.application.config.middleware.use(Middleware)
+      @rails_middleware_wired = true
     end
 
     def wire_tracing_logger

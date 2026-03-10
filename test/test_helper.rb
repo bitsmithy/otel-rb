@@ -2,11 +2,7 @@
 
 require 'minitest/autorun'
 require 'minitest/mock'
-require 'opentelemetry/sdk'
-require 'telemetry'
-
-# One call disables at_exit and installs auto-reset before every test.
-Telemetry.test_mode!
+require 'telemetry/test'
 
 module Minitest
   class Test
