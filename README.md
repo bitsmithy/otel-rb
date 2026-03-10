@@ -32,55 +32,36 @@ All `Telemetry::Config` fields are optional:
 
 ## Setup
 
-### Rails initializer
+### Rails
+
+One call in a single initializer wires everything — traces, metrics, Rack middleware, and log correlation. Nothing in `application.rb` required.
 
 ```ruby
 # config/initializers/telemetry.rb
-require "telemetry"
 
-result = Telemetry.setup(
+TELEMETRY = Telemetry.install(
   Telemetry::Config.new(
     service_name:      Rails.application.class.module_parent_name.underscore,
     service_namespace: "my-org",
-    service_version:   ENV.fetch("GIT_COMMIT_SHA", "unknown"),
-    endpoint:          ENV["OTEL_EXPORTER_OTLP_ENDPOINT"] # or nil for env var auto-detect
+    service_version:   ENV.fetch("GIT_COMMIT_SHA", "unknown")
   )
 )
-
-# Enrich every log line with trace_id and span_id
-Rails.logger.formatter = Telemetry::TraceFormatter.new
-
-# Flush telemetry on process exit
-at_exit { result[:shutdown].call }
 ```
 
-Or with all defaults:
+Or with all defaults (service name inferred from the process name):
 
 ```ruby
-result = Telemetry.setup
-at_exit { result[:shutdown].call }
+# config/initializers/telemetry.rb
+Telemetry.install
 ```
 
-`Telemetry.setup` returns a hash you'll use to wire the middleware and instrument your code:
+`Telemetry.install` handles everything automatically:
 
-```ruby
-{
-  shutdown: Proc,                      # call at exit to flush pending telemetry
-  tracer:   OpenTelemetry::Trace::Tracer,
-  meter:    OpenTelemetry::Metrics::Meter  # nil if metrics SDK unavailable
-}
-```
-
-### Rack middleware
-
-Insert near the top of your middleware stack so the span covers all downstream middleware:
-
-```ruby
-# config/application.rb
-config.middleware.use Telemetry::Middleware,
-  result[:tracer],
-  result[:meter]
-```
+- Calls `Telemetry.setup` to configure traces, metrics, and (optionally) logs
+- Inserts `Telemetry::Middleware` into the Rails middleware stack
+- Assigns `TraceFormatter` to `Rails.logger.formatter` for trace-log correlation (warns if overwriting an existing formatter)
+- Registers `at_exit` to flush pending telemetry on process exit
+- Returns the result hash so you can access `TELEMETRY[:tracer]` and `TELEMETRY[:meter]` for manual instrumentation
 
 `Telemetry::Middleware` automatically wraps each request with a server span and records:
 
@@ -96,6 +77,35 @@ Span attributes follow [OpenTelemetry semantic conventions](https://opentelemetr
 - `server.address`, `server.port`
 
 5xx responses set span status to `ERROR`. 4xx responses do not.
+
+### Non-Rails / plain Rack
+
+Use `Telemetry.setup` directly and wire the middleware yourself:
+
+```ruby
+require "telemetry"
+
+result = Telemetry.setup(
+  Telemetry::Config.new(
+    service_name: "my-app",
+    endpoint:     ENV["OTEL_EXPORTER_OTLP_ENDPOINT"]
+  )
+)
+
+use Telemetry::Middleware, result[:tracer], result[:meter]
+
+at_exit { result[:shutdown].call }
+```
+
+`Telemetry.setup` returns:
+
+```ruby
+{
+  shutdown: Proc,                      # call at exit to flush pending telemetry
+  tracer:   OpenTelemetry::Trace::Tracer,
+  meter:    OpenTelemetry::Metrics::Meter  # nil if metrics SDK unavailable
+}
+```
 
 ## Signals
 

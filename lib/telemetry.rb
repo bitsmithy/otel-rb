@@ -34,4 +34,27 @@ module Telemetry
   def self.setup(config = Config.new)
     Setup.call(config)
   end
+
+  # Rails-specific one-call setup. Wires traces, metrics, logs, Rack middleware,
+  # and trace-log correlation from a single initializer — nothing in application.rb
+  # required.
+  #
+  # @param config [Telemetry::Config]
+  # @return [Hash{Symbol => Object}] :shutdown (Proc), :tracer, :meter
+  def self.install(config = Config.new)
+    result = Setup.call(config)
+
+    Rails.application.config.middleware.use(Middleware, result[:tracer], result[:meter])
+
+    existing = Rails.logger.formatter
+    if existing && !existing.is_a?(TraceFormatter)
+      warn "[Telemetry] replacing existing logger formatter " \
+           "(#{existing.class}) with Telemetry::TraceFormatter"
+    end
+    Rails.logger.formatter = TraceFormatter.new
+
+    at_exit { result[:shutdown].call }
+
+    result
+  end
 end
