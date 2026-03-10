@@ -2,131 +2,95 @@
 
 Thin, opinionated OpenTelemetry setup for Ruby/Rails. One call wires traces, metrics, and (optionally) logs over OTLP/HTTP.
 
-Mirrors the design of [bitsmithy/go-otel](https://github.com/bitsmithy/go-otel):
-
-- **Single-call setup** — `Telemetry.setup(config)`, no builder pattern
+- **Single-call setup** — `Telemetry.setup(...)`, no builder pattern, no config objects
 - **All config optional** — sensible defaults from the environment
 - **OTLP/HTTP only** — opinionated; no stdout/Zipkin/Jaeger in the setup path
 - **Env var fallback** — standard `OTEL_*` env vars apply when `endpoint:` is nil
-- **Explicit shutdown** — caller registers `at_exit { result[:shutdown].call }`
+- **Uniform entrypoints** — `Telemetry.trace`, `Telemetry.counter`/`.histogram`/`.gauge`/`.up_down_counter`, `Telemetry.meter`, `Telemetry.log`
 
 ## Installation
 
-Add to your `Gemfile`:
-
 ```ruby
-gem "otel-rb"
+# Gemfile
+gem "otel-rb", require: "telemetry"
+
+# From GitHub
+gem "otel-rb", github: "bitsmithy/otel-rb", require: "telemetry"
 ```
+
+> The `require:` key is needed because the gem name (`otel-rb`) doesn't match its load path (`telemetry`).
 
 ## Configuration
 
-All `Telemetry::Config` fields are optional:
+All options are optional. Pass them as keywords to `Telemetry.setup`:
 
-| Field | Default | Description |
-|-------|---------|-------------|
+| Option | Default | Description |
+|--------|---------|-------------|
 | `service_name` | `File.basename($PROGRAM_NAME, ".*")` | Reported service name |
 | `service_namespace` | Parent directory name | Reported service namespace |
 | `service_version` | `ENV["SERVICE_VERSION"]` or `"unknown"` | Reported service version |
 | `endpoint` | `nil` | OTLP endpoint URL; nil uses `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| `log_level` | `:info` | Logger level (informational; not yet wired to SDK logger) |
+| `integrate_tracing_logger` | `false` | When `true`, assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/log correlation |
 
 ## Setup
 
 ### Rails
 
-One call in a single initializer wires everything — traces, metrics, Rack middleware, and log correlation. Nothing in `application.rb` required.
-
 ```ruby
 # config/initializers/telemetry.rb
 
-TELEMETRY = Telemetry.install(
-  Telemetry::Config.new(
-    service_name:      Rails.application.class.module_parent_name.underscore,
-    service_namespace: "my-org",
-    service_version:   ENV.fetch("GIT_COMMIT_SHA", "unknown")
-  )
+Telemetry.setup(
+  service_name:             Rails.application.class.module_parent_name.underscore,
+  service_namespace:        "my-org",
+  service_version:          ENV.fetch("GIT_COMMIT_SHA", "unknown"),
+  integrate_tracing_logger: true
 )
 ```
 
-Or with all defaults (service name inferred from the process name):
+When Rails is detected, setup always:
 
-```ruby
-# config/initializers/telemetry.rb
-Telemetry.install
-```
-
-`Telemetry.install` handles everything automatically:
-
-- Calls `Telemetry.setup` to configure traces, metrics, and (optionally) logs
-- Inserts `Telemetry::Middleware` into the Rails middleware stack
-- Assigns `TraceFormatter` to `Rails.logger.formatter` for trace-log correlation (warns if overwriting an existing formatter)
+- Inserts `Telemetry::Middleware` into the Rails middleware stack (traces every request, records HTTP metrics)
 - Registers `at_exit` to flush pending telemetry on process exit
-- Returns the result hash so you can access `TELEMETRY[:tracer]` and `TELEMETRY[:meter]` for manual instrumentation
 
-`Telemetry::Middleware` automatically wraps each request with a server span and records:
+With `integrate_tracing_logger: true`, setup also:
 
-- `http.server.request.count` (counter)
-- `http.server.request.duration` (histogram, seconds)
-- `http.server.active_requests` (up-down counter)
+- Assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/span ID correlation
 
-Span attributes follow [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/http/):
-
-- `http.request.method`
-- `http.route` (uses `action_dispatch.route_uri_pattern` when available — low cardinality)
-- `http.response.status_code`
-- `server.address`, `server.port`
-
-5xx responses set span status to `ERROR`. 4xx responses do not.
+`Telemetry::Middleware` records span attributes per [OTel HTTP semantic conventions](https://opentelemetry.io/docs/specs/semconv/http/):
+`http.request.method`, `http.route`, `http.response.status_code`, `server.address`, `server.port`.
+5xx responses set span status to `ERROR`. 4xx do not.
 
 ### Non-Rails / plain Rack
-
-Use `Telemetry.setup` directly and wire the middleware yourself:
 
 ```ruby
 require "telemetry"
 
-result = Telemetry.setup(
-  Telemetry::Config.new(
-    service_name: "my-app",
-    endpoint:     ENV["OTEL_EXPORTER_OTLP_ENDPOINT"]
-  )
-)
+Telemetry.setup(service_name: "my-app")
 
-use Telemetry::Middleware, result[:tracer], result[:meter]
-
-at_exit { result[:shutdown].call }
-```
-
-`Telemetry.setup` returns:
-
-```ruby
-{
-  shutdown: Proc,                      # call at exit to flush pending telemetry
-  tracer:   OpenTelemetry::Trace::Tracer,
-  meter:    OpenTelemetry::Metrics::Meter  # nil if metrics SDK unavailable
-}
+use Telemetry::Middleware # Mount the middleware
 ```
 
 ## Signals
 
-| Signal | Status | Gem |
-|--------|--------|-----|
-| Traces | Required | `opentelemetry-sdk`, `opentelemetry-exporter-otlp` |
-| Metrics | Required (graceful degradation) | `opentelemetry-metrics-sdk`, `opentelemetry-exporter-otlp-metrics` |
-| Logs | Optional (silent no-op if absent) | `opentelemetry-logs-sdk`, `opentelemetry-exporter-otlp-logs` |
+| Signal | Availability | Gems |
+|--------|-------------|------|
+| Traces | Always | `opentelemetry-sdk`, `opentelemetry-exporter-otlp` |
+| Metrics | Graceful degradation if missing | `opentelemetry-metrics-sdk`, `opentelemetry-exporter-otlp-metrics` |
+| Logs | Optional no-op if absent | `opentelemetry-logs-sdk`, `opentelemetry-exporter-otlp-logs` |
 
-## Instrumenting your code
+## Tracing
 
-### Traces
-
-Use the tracer returned by `setup` to wrap any block of work in a span:
+`Telemetry.trace` wraps a block in a span and yields it. Nested calls automatically become child spans — no wiring needed.
 
 ```ruby
-result[:tracer].in_span("orders.process", attributes: { "order.id" => order.id }) do |span|
-  items = fetch_line_items(order)
+Telemetry.trace("orders.process", attrs: { "order.id" => order.id }) do |span|
   span.set_attribute("order.item_count", items.size)
 
-  charge(order)
+  # Nested call → child span, automatically linked to the parent
+  Telemetry.trace("orders.charge") do |_child|
+    charge(order)
+  end
+
 rescue => e
   span.record_exception(e)
   span.status = OpenTelemetry::Trace::Status.error(e.message)
@@ -134,44 +98,158 @@ rescue => e
 end
 ```
 
-Child spans are automatically linked to the parent via context propagation — no manual wiring needed.
+Inside a Rails controller action, any `Telemetry.trace` call is automatically a child of the request span set by `Telemetry::Middleware`.
 
-### Metrics
+## Metrics
 
-Use the meter to create instruments once (e.g. in an initializer or class body) and record observations anywhere:
+Each instrument type has a single method that works in two forms:
+
+| Form | Arguments | Effect |
+|------|-----------|--------|
+| Handle | `(name)` or `(name, unit: "s", description: "...")` | Returns a cached instrument object for repeated use |
+| Fire-and-forget | `(name, value)` or `(name, value, attrs_hash, unit: "s", description: "...")` | Records the value immediately, returns nil |
+| Block *(histogram only)* | `(name, unit: "s") { block }` or `(name, attrs_hash, unit: "s") { block }` | Times the block, records duration in seconds, returns block value |
+
+`unit:` and `description:` are always keyword arguments and can be added to either form. The numeric value, when present, is always the second positional argument. The attributes hash, when present, is always the third positional argument — never a keyword. This is why the hash position shifts between the two forms: the handle form has no value, so attributes have nowhere to go as positional args — pass them when you call the method on the handle instead.
+
+`unit:` follows the OTel convention: use SI units (`"s"`, `"By"`, `"ms"`) for standard measurements, or curly-brace notation (`"{order}"`, `"{request}"`) for arbitrary countable things. Your backend uses it as the Y-axis label.
+
+**Metric attributes** (the `attrs` hash) are key/value labels attached to each recorded value. They let you slice the same metric by dimension — e.g. `"payment.method" => "card"` lets you chart orders by payment method without a separate instrument per method. Keep the number of distinct values per key low; each unique combination produces a separate time series in your backend.
+
+---
+
+### Counter
+
+Monotonically increasing. Use for things that only ever go up: requests served, errors raised, emails sent.
 
 ```ruby
-# Create instruments once
-orders_counter  = result[:meter].create_counter("orders.placed",
-                    unit: "{order}", description: "Orders successfully placed")
-charge_duration = result[:meter].create_histogram("orders.charge_duration",
-                    unit: "s", description: "Time to charge the customer")
+# Handle form — get a reusable object, then call .add
+orders = Telemetry.counter("orders.placed", unit: "{order}")
+orders.add(1)
+orders.add(1, "payment.method" => "card")   # with attributes
+orders.add(3, "payment.method" => "card")   # add more than 1
 
-# Record in application code
-orders_counter.add(1, "payment.method" => order.payment_method)
-
-start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-charge(order)
-charge_duration.record(Process.clock_gettime(Process::CLOCK_MONOTONIC) - start,
-                       "payment.method" => order.payment_method)
+# Fire-and-forget — record immediately
+Telemetry.counter("orders.placed", 1, unit: "{order}", description: "Orders placed")
+Telemetry.counter("orders.placed", 1, "payment.method" => "card", unit: "{order}", description: "Orders placed")
 ```
 
-### Logs
+### Histogram
 
-With `TraceFormatter` assigned to `Rails.logger`, every log line is automatically enriched with the active trace and span IDs — no extra calls needed:
+Distribution of values over time. Use for durations, payload sizes, latencies — anything where you care about percentiles (p50/p95/p99), not just the total.
 
 ```ruby
-Rails.logger.info "Order placed: #{order.id}"
-# => I, [2026-03-09T12:00:00.000000 #1234]  INFO -- app: Order placed: 8f3a
-#    trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7
+# Handle form
+durations = Telemetry.histogram("orders.duration", unit: "s")
+durations.record(0.42)
+durations.record(0.42, "queue" => "default")  # with attributes
+durations.time { charge(order) }              # times block, records seconds
+durations.time("queue" => "default") { charge(order) }  # timed with attributes
+
+# Fire-and-forget — record a value immediately
+Telemetry.histogram("orders.duration", 0.42, unit: "s", description: "Order processing time")
+Telemetry.histogram("orders.duration", 0.42, "queue" => "default", unit: "s", description: "Order processing time")
+
+# Fire-and-forget — block form, unit: "s" must be set explicitly
+Telemetry.histogram("orders.charge_duration", unit: "s") { charge(order) }
+Telemetry.histogram("orders.charge_duration", "queue" => "default", unit: "s") { charge(order) }
+
+# Timed shorthand — unit: "s" set automatically
+result = Telemetry.time("orders.charge_duration") { charge(order) }
+result = Telemetry.time("orders.charge_duration", "queue" => "default") { charge(order) }
+
 ```
 
-The IDs are omitted automatically when no span is active (e.g. background jobs outside a traced context).
+Block return value is always passed through.
 
-`Telemetry::TraceFormatter` is a `Logger::Formatter` subclass — assign it once and it enriches every log line transparently:
+### Gauge
+
+Current value at a point in time. Use when you only care about the latest reading: memory usage, CPU %, queue depth, temperature.
 
 ```ruby
-Rails.logger.formatter = Telemetry::TraceFormatter.new
+# Handle form
+depth = Telemetry.gauge("queue.depth", unit: "{job}")
+depth.record(17)
+depth.record(17, "queue" => "default")  # with attributes
+
+# Fire-and-forget
+Telemetry.gauge("queue.depth", 17, unit: "{job}", description: "Jobs waiting in queue")
+Telemetry.gauge("queue.depth", 17, "queue" => "default", unit: "{job}", description: "Jobs waiting in queue")
+```
+
+### UpDownCounter
+
+Value that can increase and decrease. Use for counts of things that go up and down: active connections, items in a queue, concurrent in-flight requests.
+
+```ruby
+# Handle form
+connections = Telemetry.up_down_counter("db.connections", unit: "{connection}")
+connections.increment                           # +1
+connections.increment(5)                        # +5
+connections.increment(1, "pool" => "primary")   # +1 with attributes
+connections.decrement                           # -1
+connections.decrement(3)                        # -3
+connections.decrement(1, "pool" => "primary")   # -1 with attributes
+
+# Fire-and-forget
+Telemetry.up_down_counter("db.connections",  1, unit: "{connection}", description: "Active DB connections")
+Telemetry.up_down_counter("db.connections", -1, unit: "{connection}", description: "Active DB connections")
+Telemetry.up_down_counter("db.connections",  1, "pool" => "primary", unit: "{connection}", description: "Active DB connections")
+```
+
+### Raw meter
+
+`Telemetry.meter` returns the underlying `OpenTelemetry::Meter` for advanced use cases not covered above, such as observable (async) instruments:
+
+```ruby
+Telemetry.meter.create_observable_gauge("process.memory.usage", unit: "By") do |observer|
+  observer.observe(current_memory_bytes)
+end
+```
+
+## Logging
+
+**`Telemetry.log`** — module-level shorthand:
+
+```ruby
+Telemetry.log(:info,  "Order placed") # Logs to both OTel and wherever Rails.logger writes to
+Telemetry.log(:error, "Charge failed", rails_logger: false)  # Logs ONLY to OTel. This log line will not surface wherever Rails.logger writes to
+```
+
+**`Telemetry.logger`** — returns the `Telemetry::Logger` instance for reuse:
+
+```ruby
+Telemetry.logger.warn("Low balance", rails_logger: true)
+```
+
+Available levels: `debug`, `info`, `warn`, `error`, `fatal`.
+
+When Rails is present, calls also delegate to `Rails.logger` by default. Pass `rails_logger: false` to suppress for a specific call.
+
+When the OTel Logs SDK (`opentelemetry-logs-sdk`) is not installed, OTel output is a no-op after a one-time warning. Rails.logger delegation is unaffected.
+
+## TraceFormatter
+
+**TraceFormatter (or `Telemetry.log` / `Telemetry.logger`) is required for log-trace correlation.** Plain `Rails.logger` without TraceFormatter emits no trace/span IDs — those logs are impossible to correlate with your traces in an observability backend.
+
+With `integrate_tracing_logger: true`, `TraceFormatter` is assigned to `Rails.logger.formatter` automatically. Every log line is enriched with the active trace and span IDs (IDs are omitted when no span is active):
+
+```text
+I, [2026-03-10T12:00:00.000000 #1234]  INFO -- app: Order placed
+  trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7
+```
+
+If you `integrate_tracing_logger`, there is no reason to use `Telemetry.log` / `Telemetry.logger` unless there's a log line you do NOT want to show up where `Rails.logger` writes to: `Telemetry.log("something", rails_logger: false)`
+
+If you prefer not to replace `Rails.logger.formatter`, use `Telemetry.log` / `Telemetry.logger` directly — these always emit with trace context attached, regardless of the `integrate_tracing_logger` setting.
+
+## Error handling
+
+All public methods raise `Telemetry::NotSetupError` if called before `Telemetry.setup`:
+
+```ruby
+Telemetry.trace("x") { }
+# => Telemetry::NotSetupError: Telemetry.trace called before Telemetry.setup
 ```
 
 ## License

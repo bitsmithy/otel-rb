@@ -35,9 +35,10 @@ Gem::Specification.new do |spec|
 
   # Logs — intentionally NOT listed; loaded only if present at runtime
 
-  spec.add_development_dependency 'rack',      '~> 3.0'
-  spec.add_development_dependency 'rack-test', '~> 2.0'
-  spec.add_development_dependency 'rspec',     '~> 3.13'
-  spec.add_development_dependency 'rubocop',   '~> 1.65'
+  spec.add_development_dependency 'minitest',           '~> 5.25'
+  spec.add_development_dependency 'minitest-reporters', '~> 1.7'
+  spec.add_development_dependency 'rack',               '~> 3.0'
+  spec.add_development_dependency 'rack-test',          '~> 2.0'
+  spec.add_development_dependency 'rubocop',            '~> 1.65'
   spec.metadata['rubygems_mfa_required'] = 'true'
 end

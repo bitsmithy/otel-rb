@@ -16,9 +16,10 @@ GEM
   specs:
     addressable (2.8.9)
       public_suffix (>= 2.0.2, < 8.0)
+    ansi (1.5.0)
     ast (2.4.3)
     bigdecimal (4.0.1)
-    diff-lcs (1.6.2)
+    builder (3.3.0)
     google-protobuf (4.34.0)
       bigdecimal
       rake (~> 13.3)
@@ -57,6 +58,12 @@ GEM
     logger (1.7.0)
     mcp (0.8.0)
       json-schema (>= 4.1)
+    minitest (5.27.0)
+    minitest-reporters (1.7.1)
+      ansi
+      builder
+      minitest (>= 5.0)
+      ruby-progressbar
     opentelemetry-api (1.7.0)
     opentelemetry-common (0.23.0)
       opentelemetry-api (~> 1.0)
@@ -104,19 +111,6 @@ GEM
     rainbow (3.1.1)
     rake (13.3.1)
     regexp_parser (2.11.3)
-    rspec (3.13.2)
-      rspec-core (~> 3.13.0)
-      rspec-expectations (~> 3.13.0)
-      rspec-mocks (~> 3.13.0)
-    rspec-core (3.13.6)
-      rspec-support (~> 3.13.0)
-    rspec-expectations (3.13.5)
-      diff-lcs (>= 1.2.0, < 2.0)
-      rspec-support (~> 3.13.0)
-    rspec-mocks (3.13.8)
-      diff-lcs (>= 1.2.0, < 2.0)
-      rspec-support (~> 3.13.0)
-    rspec-support (3.13.7)
     rubocop (1.85.1)
       json (~> 2.3)
       language_server-protocol (~> 3.17.0.2)
@@ -149,10 +143,11 @@ PLATFORMS
   x86_64-linux-musl
 
 DEPENDENCIES
+  minitest (~> 5.25)
+  minitest-reporters (~> 1.7)
   otel-rb!
   rack (~> 3.0)
   rack-test (~> 2.0)
-  rspec (~> 3.13)
   rubocop (~> 1.65)
 
 BUNDLED WITH

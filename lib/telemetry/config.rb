@@ -3,20 +3,20 @@
 module Telemetry
   class Config
     attr_reader :service_name, :service_namespace, :service_version,
-                :endpoint, :log_level
+                :endpoint, :integrate_tracing_logger
 
     def initialize(
       service_name: nil,
       service_namespace: nil,
       service_version: nil,
       endpoint: nil,
-      log_level: :info
+      integrate_tracing_logger: false
     )
-      @service_name      = service_name      || default_service_name
-      @service_namespace = service_namespace || default_service_namespace
-      @service_version   = service_version   || default_service_version
-      @endpoint          = endpoint
-      @log_level         = log_level
+      @service_name             = service_name      || default_service_name
+      @service_namespace        = service_namespace || default_service_namespace
+      @service_version          = service_version   || default_service_version
+      @endpoint                 = endpoint
+      @integrate_tracing_logger = integrate_tracing_logger
     end
 
     private

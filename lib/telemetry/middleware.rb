@@ -12,27 +12,20 @@ module Telemetry
     # Set by Rails router after routing (Rails 7.1+)
     ROUTE_PATTERN_KEY = 'action_dispatch.route_uri_pattern'
 
-    def initialize(app, tracer, meter)
-      @app    = app
-      @tracer = tracer
-
-      return unless meter
-
-      @request_count    = meter.create_counter(HTTP_SERVER_REQUEST_COUNT,
-                                               unit: '{request}', description: 'Total HTTP server requests')
-      @request_duration = meter.create_histogram(HTTP_SERVER_REQUEST_DURATION,
-                                                 unit: 's', description: 'HTTP server request duration')
-      @active_requests  = meter.create_up_down_counter(HTTP_SERVER_ACTIVE_REQUESTS,
-                                                       unit: '{request}', description: 'Active HTTP server requests')
+    def initialize(app)
+      @app = app
+      @instruments_initialized = false
     end
 
     def call(env)
+      init_instruments unless @instruments_initialized
+
       request = Rack::Request.new(env)
       context = OpenTelemetry.propagation.extract(env, getter: rack_getter)
 
       OpenTelemetry::Context.with_current(context) do
-        @tracer.in_span("#{request.request_method} #{request.path}", kind: :server) do |span|
-          @active_requests&.add(1, 'http.request.method' => request.request_method)
+        Telemetry.tracer.in_span("#{request.request_method} #{request.path}", kind: :server) do |span|
+          active_requests&.add(1, 'http.request.method' => request.request_method)
           start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
           status, headers, body = @app.call(env)
@@ -56,9 +49,9 @@ module Telemetry
             'http.response.status_code' => status.to_s
           }
 
-          @request_count&.add(1, **metric_attrs)
-          @request_duration&.record(duration, **metric_attrs)
-          @active_requests&.add(-1, 'http.request.method' => request.request_method)
+          request_count&.add(1, **metric_attrs)
+          request_duration&.record(duration, **metric_attrs)
+          active_requests&.add(-1, 'http.request.method' => request.request_method)
 
           [status, headers, body]
         end
@@ -66,6 +59,23 @@ module Telemetry
     end
 
     private
+
+    def init_instruments
+      meter = Telemetry.meter
+      if meter
+        @request_count    = meter.create_counter(HTTP_SERVER_REQUEST_COUNT,
+                                                 unit: '{request}', description: 'Total HTTP server requests')
+        @request_duration = meter.create_histogram(HTTP_SERVER_REQUEST_DURATION,
+                                                   unit: 's', description: 'HTTP server request duration')
+        @active_requests  = meter.create_up_down_counter(HTTP_SERVER_ACTIVE_REQUESTS,
+                                                         unit: '{request}', description: 'Active HTTP server requests')
+      end
+      @instruments_initialized = true
+    end
+
+    def request_count    = @request_count
+    def request_duration = @request_duration
+    def active_requests  = @active_requests
 
     def rack_getter
       OpenTelemetry::Context::Propagation::RackEnvGetter.new

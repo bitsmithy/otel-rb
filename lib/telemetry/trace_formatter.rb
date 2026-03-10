@@ -8,6 +8,15 @@ module Telemetry
   class TraceFormatter < ::Logger::Formatter
     FORMAT = "%s, [%s#%d] %5s -- %s: %s%s\n"
 
+    # Include ActiveSupport::TaggedLogging::Formatter when available so that
+    # Rails' tagged logger (push_tags/pop_tags) works without modification.
+    begin
+      require 'active_support/tagged_logging'
+      include ::ActiveSupport::TaggedLogging::Formatter
+    rescue LoadError
+      nil
+    end
+
     def call(severity, time, progname, msg)
       format(FORMAT, severity[0..0], format_datetime(time), $PROCESS_ID, severity, progname || 'app', msg2str(msg),
              trace_suffix)
