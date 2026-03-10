@@ -6,6 +6,7 @@
 ENV['OTEL_METRICS_EXPORTER'] ||= 'none'
 
 require 'minitest/autorun'
+require 'minitest/mock'
 require 'minitest/reporters'
 require 'opentelemetry/sdk'
 require 'telemetry'
