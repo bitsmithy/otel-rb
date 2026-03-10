@@ -73,9 +73,7 @@ module Telemetry
       @instruments_initialized = true
     end
 
-    def request_count    = @request_count
-    def request_duration = @request_duration
-    def active_requests  = @active_requests
+    attr_reader :request_count, :request_duration, :active_requests
 
     def rack_getter
       OpenTelemetry::Context::Propagation::RackEnvGetter.new

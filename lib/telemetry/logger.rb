@@ -67,11 +67,8 @@ module Telemetry
     end
 
     def emit_otel(level, message)
-      unless @otel_logger
-        unless @otel_warned
-          Kernel.warn '[Telemetry] OTel Logs SDK not available; Telemetry.logger OTel output is a no-op'
-          @otel_warned = true
-        end
+      if @otel_logger.nil?
+        warn_otel_missing unless @otel_warned
         return
       end
 
@@ -86,6 +83,11 @@ module Telemetry
         trace_flags:     span_context.valid? ? span_context.trace_flags : nil,
         observed_timestamp: Time.now
       )
+    end
+
+    def warn_otel_missing
+      Kernel.warn '[Telemetry] OTel Logs SDK not available; Telemetry.logger OTel output is a no-op'
+      @otel_warned = true
     end
 
     def build_otel_logger

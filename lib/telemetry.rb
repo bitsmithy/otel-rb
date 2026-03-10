@@ -263,11 +263,8 @@ module Telemetry
 
     # Shared dispatch: returns handle when value is nil, records immediately when value is Numeric.
     def dispatch(type, name, value, attrs, unit:, description:)
-      if value.is_a?(Numeric)
-        fetch_instrument(type, name, unit: unit, description: description).record_value(value, attrs)
-      else
-        fetch_instrument(type, name, unit: unit, description: description)
-      end
+      instrument = fetch_instrument(type, name, unit: unit, description: description)
+      value.is_a?(Numeric) ? instrument.record_value(value, attrs) : instrument
     end
 
     def fetch_instrument(type, name, unit:, description:)
@@ -277,17 +274,16 @@ module Telemetry
       @instruments[[type, name]] ||= build_instrument(type, name, unit: unit, description: description)
     end
 
+    INSTRUMENT_TYPES = {
+      counter:         [:create_counter,          Instruments::Counter],
+      histogram:       [:create_histogram,        Instruments::Histogram],
+      gauge:           [:create_gauge,            Instruments::Gauge],
+      up_down_counter: [:create_up_down_counter,  Instruments::UpDownCounter]
+    }.freeze
+
     def build_instrument(type, name, unit:, description:)
-      case type
-      when :counter
-        Instruments::Counter.new(@meter.create_counter(name, unit: unit, description: description))
-      when :histogram
-        Instruments::Histogram.new(@meter.create_histogram(name, unit: unit, description: description))
-      when :gauge
-        Instruments::Gauge.new(@meter.create_gauge(name, unit: unit, description: description))
-      when :up_down_counter
-        Instruments::UpDownCounter.new(@meter.create_up_down_counter(name, unit: unit, description: description))
-      end
+      factory_method, wrapper_class = INSTRUMENT_TYPES.fetch(type)
+      wrapper_class.new(@meter.public_send(factory_method, name, unit: unit, description: description))
     end
   end
 end

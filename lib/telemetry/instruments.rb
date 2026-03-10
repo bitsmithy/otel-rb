@@ -5,13 +5,20 @@ module Telemetry
   # These are not part of the public API — do not instantiate directly.
   # @api private
   module Instruments
-    # Monotonically increasing cumulative count.
-    # Use for things that only ever go up: requests served, errors thrown, bytes sent.
-    class Counter
+    # Shared base for all instrument wrappers.
+    class Base
       def initialize(instrument)
         @instrument = instrument
       end
 
+      private
+
+      attr_reader :instrument
+    end
+
+    # Monotonically increasing cumulative count.
+    # Use for things that only ever go up: requests served, errors thrown, bytes sent.
+    class Counter < Base
       # @param value [Numeric] positive amount to add
       # @param attrs [Hash] metric attributes
       def add(value, attrs = {})
@@ -24,11 +31,7 @@ module Telemetry
     # Distribution of values over time.
     # Use for durations, payload sizes, latencies — anything where you care
     # about percentiles, not just the sum.
-    class Histogram
-      def initialize(instrument)
-        @instrument = instrument
-      end
-
+    class Histogram < Base
       # @param value [Numeric] observed value
       # @param attrs [Hash] metric attributes
       def record(value, attrs = {})
@@ -53,11 +56,7 @@ module Telemetry
     # Current value at a point in time (non-additive snapshot).
     # Use when you only care about the latest reading: memory usage, temperature,
     # CPU %, file descriptor count.
-    class Gauge
-      def initialize(instrument)
-        @instrument = instrument
-      end
-
+    class Gauge < Base
       # @param value [Numeric] current observed value
       # @param attrs [Hash] metric attributes
       def record(value, attrs = {})
@@ -70,11 +69,7 @@ module Telemetry
     # Value that can increment and decrement.
     # Use for counts of things that go up and down: active connections,
     # items currently in a queue, concurrent in-flight requests.
-    class UpDownCounter
-      def initialize(instrument)
-        @instrument = instrument
-      end
-
+    class UpDownCounter < Base
       # Increments the counter by +n+ (default 1).
       # @param n [Numeric]
       # @param attrs [Hash] metric attributes
