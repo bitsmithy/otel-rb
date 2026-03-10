@@ -16,7 +16,6 @@ Gem::Specification.new do |spec|
 
   spec.files         = Dir['lib/**/*', 'README.md', 'LICENSE']
   spec.require_paths = ['lib']
-  spec.require       = ['telemetry']
 
   # Ruby 4.0+ no longer bundles logger in default gems
   spec.add_dependency 'logger', '~> 1.6'

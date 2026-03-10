@@ -15,7 +15,7 @@ Mirrors the design of [bitsmithy/go-otel](https://github.com/bitsmithy/go-otel):
 Add to your `Gemfile`:
 
 ```ruby
-gem "otel-rb"
+gem "otel-rb", require: "telemetry"
 ```
 
 ## Configuration
