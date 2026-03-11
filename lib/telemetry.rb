@@ -5,6 +5,7 @@ require 'telemetry/config'
 require 'telemetry/setup'
 require 'telemetry/middleware'
 require 'telemetry/trace_formatter'
+require 'telemetry/log_bridge'
 require 'telemetry/logger'
 require 'telemetry/instruments'
 require 'telemetry/metering'
@@ -223,7 +224,6 @@ module Telemetry
         @tracer      = nil
         @meter       = nil
         @logger      = nil
-        @shutdown    = nil
         @instruments = nil
       end
     end
@@ -243,6 +243,11 @@ module Telemetry
              "(#{existing.class}) with Telemetry::TraceFormatter"
       end
       Rails.logger.formatter = TraceFormatter.new
+      Rails.logger.singleton_class.prepend(LogBridge)
+      Rails.logger.instance_variable_set(
+        :@telemetry_bridge_logger,
+        OpenTelemetry.logger_provider.logger(name: 'telemetry.bridge', version: VERSION)
+      )
     end
 
     def skip_formatter_replacement?(formatter)

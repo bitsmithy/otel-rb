@@ -184,6 +184,42 @@ class SetupTest < Minitest::Test
     assert_kind_of Proc, result[:shutdown]
   end
 
+  # --- LogBridge installation ---
+
+  def test_bridge_installed_when_integrate_tracing_logger_true
+    require 'telemetry/log_bridge'
+    rails_logger = ::Logger.new(StringIO.new)
+
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+    end
+
+    assert_includes rails_logger.singleton_class.ancestors, Telemetry::LogBridge
+  end
+
+  def test_bridge_not_installed_by_default
+    require 'telemetry/log_bridge'
+    rails_logger = ::Logger.new(StringIO.new)
+
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service')
+    end
+
+    refute_includes rails_logger.singleton_class.ancestors, Telemetry::LogBridge
+  end
+
+  def test_bridge_skipped_in_test_mode_with_simple_formatter
+    require 'telemetry/log_bridge'
+    rails_logger = ::Logger.new(StringIO.new)
+    rails_logger.formatter = ActiveSupport::Logger::SimpleFormatter.new
+
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+    end
+
+    refute_includes rails_logger.singleton_class.ancestors, Telemetry::LogBridge
+  end
+
   private
 
   def fake_rails_logger(formatter:)

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Implementation Plan — Rails.logger OTel Forwarding</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700;800&family=Fragment+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-body: 'Bricolage Grotesque', system-ui, sans-serif;
+    --font-mono: 'Fragment Mono', 'SF Mono', Consolas, monospace;
+    --bg: #f4f2ee;
+    --surface: #ffffff;
+    --surface2: #ece9e3;
+    --surface-elevated: #fffdf9;
+    --border: rgba(0,0,0,0.07);
+    --border-bright: rgba(0,0,0,0.14);
+    --text: #1f1d1a;
+    --text-dim: #7a7468;
+    --gold: #a16207;
+    --gold-dim: rgba(161,98,7,0.08);
+    --sage: #3d7c3f;
+    --sage-dim: rgba(61,124,63,0.08);
+    --rose: #b91c50;
+    --rose-dim: rgba(185,28,80,0.07);
+    --teal: #0e7070;
+    --teal-dim: rgba(14,112,112,0.07);
+    --amber: #c2710c;
+    --amber-dim: rgba(194,113,12,0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171412;
+      --surface: #211e1b;
+      --surface2: #2a2622;
+      --surface-elevated: #2e2a25;
+      --border: rgba(255,255,255,0.06);
+      --border-bright: rgba(255,255,255,0.13);
+      --text: #ece5da;
+      --text-dim: #9e9486;
+      --gold: #eab308;
+      --gold-dim: rgba(234,179,8,0.1);
+      --sage: #86efac;
+      --sage-dim: rgba(134,239,172,0.08);
+      --rose: #fda4af;
+      --rose-dim: rgba(253,164,175,0.08);
+      --teal: #5eead4;
+      --teal-dim: rgba(94,234,212,0.08);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251,191,36,0.08);
+    }
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg);
+    background-image:
+      radial-gradient(ellipse at 25% 0%,var(--gold-dim) 0%,transparent 50%),
+      radial-gradient(ellipse at 75% 100%,var(--sage-dim) 0%,transparent 40%);
+    color:var(--text);font-family:var(--font-body);
+    padding:48px 40px;min-height:100vh;overflow-wrap:break-word;
+  }
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  .anim{animation:fadeUp .4s ease-out both;animation-delay:calc(var(--i,0)*.06s)}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0ms!important;transition-duration:.01ms!important}}
+  .page{max-width:1100px;margin:0 auto}
+  /* Typography */
+  .mono{font-family:var(--font-mono);font-size:11px;font-weight:400;text-transform:uppercase;letter-spacing:1.6px;color:var(--text-dim)}
+  h1{font-size:44px;font-weight:800;letter-spacing:-1.5px;line-height:1.05;margin:6px 0 4px;text-wrap:balance}
+  h2{font-size:24px;font-weight:700;letter-spacing:-.5px;margin:48px 0 18px}
+  h3{font-size:16px;font-weight:600;margin:0 0 10px}
+  .subtitle{color:var(--text-dim);font-size:16px;margin-bottom:48px;max-width:600px;line-height:1.5}
+  /* Card */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px}
+  .card--elevated{background:var(--surface-elevated);box-shadow:0 2px 12px rgba(0,0,0,.05)}
+  .card--recessed{background:var(--surface2);box-shadow:inset 0 1px 3px rgba(0,0,0,.04)}
+  .card-label{font-family:var(--font-mono);font-size:10px;font-weight:400;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .card-label .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  /* Before/After */
+  .diff-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .diff-grid>*{min-width:0;overflow-wrap:break-word}
+  .diff-header{font-family:var(--font-mono);font-size:11px;font-weight:400;text-transform:uppercase;letter-spacing:1.2px;padding:10px 20px}
+  .diff-header--before{background:var(--rose-dim);color:var(--rose);border-bottom:2px solid var(--rose)}
+  .diff-header--after{background:var(--sage-dim);color:var(--sage);border-bottom:2px solid var(--sage)}
+  .diff-body{padding:20px;font-size:14px;line-height:1.7}
+  .diff-body ol{padding-left:1.5em;margin:0}
+  .diff-body li{margin-bottom:6px}
+  .diff-body code{font-family:var(--font-mono);font-size:12px;background:var(--gold-dim);color:var(--gold);padding:1px 5px;border-radius:3px}
+  .diff-body .gap{color:var(--rose);font-weight:600}
+  .diff-body .win{color:var(--sage);font-weight:600}
+  /* Code block */
+  .code-block{font-family:var(--font-mono);font-size:12.5px;line-height:1.55;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+  .code-file{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .code-file__header{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+  .code-file__body{font-family:var(--font-mono);font-size:12.5px;line-height:1.55;padding:16px;background:var(--surface-elevated);white-space:pre-wrap;word-break:break-word;max-height:400px;overflow:auto}
+  /* Mermaid */
+  .mermaid-wrap{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px 24px;overflow:auto;display:flex;justify-content:center;align-items:center;min-height:350px;cursor:grab;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+  .mermaid-wrap::-webkit-scrollbar{width:6px;height:6px}
+  .mermaid-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  .mermaid-wrap.is-panning{cursor:grabbing;user-select:none}
+  .mermaid-wrap .mermaid{zoom:1.3}
+  .zoom-controls{position:absolute;top:8px;right:8px;display:flex;gap:2px;z-index:10;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px}
+  .zoom-controls button{width:28px;height:28px;border:none;background:transparent;color:var(--text-dim);font-family:var(--font-mono);font-size:14px;cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s}
+  .zoom-controls button:hover{background:var(--border);color:var(--text)}
+  .mermaid .nodeLabel{color:var(--text)!important}
+  .mermaid .edgeLabel{color:var(--text-dim)!important;background-color:var(--bg)!important;font-family:var(--font-mono)!important;font-size:12px!important}
+  .mermaid .edgeLabel rect{fill:var(--bg)!important}
+  /* Table */
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.5}
+  th{background:var(--surface-elevated);font-family:var(--font-mono);font-size:10px;font-weight:400;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);text-align:left;padding:10px 16px;border-bottom:2px solid var(--border-bright);white-space:nowrap}
+  td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:nth-child(even){background:var(--gold-dim)}
+  tbody tr{transition:background .15s}
+  tbody tr:hover{background:var(--border)}
+  td code{font-family:var(--font-mono);font-size:11px;background:var(--gold-dim);color:var(--gold);padding:1px 5px;border-radius:3px}
+  /* Status */
+  .st{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:10px;font-weight:400;padding:2px 8px;border-radius:5px;white-space:nowrap}
+  .st--gap{background:var(--rose-dim);color:var(--rose)}
+  .st--ok{background:var(--sage-dim);color:var(--sage)}
+  .st--new{background:var(--teal-dim);color:var(--teal)}
+  .st--warn{background:var(--amber-dim);color:var(--amber)}
+  /* Callout */
+  .callout{padding:16px 20px;border-radius:0 10px 10px 0;border-left:3px solid var(--gold);background:var(--surface);font-size:14px;line-height:1.6;color:var(--text-dim);margin:16px 0}
+  .callout strong{color:var(--text)}
+  .callout code{font-family:var(--font-mono);font-size:11px;background:var(--gold-dim);color:var(--gold);padding:1px 5px;border-radius:3px}
+  .callout--rose{border-left-color:var(--rose)}
+  .callout--sage{border-left-color:var(--sage)}
+  .callout--amber{border-left-color:var(--amber)}
+  /* Phase */
+  .phase{display:grid;grid-template-columns:40px 1fr;gap:0 16px;margin-bottom:24px}
+  .phase-num{font-family:var(--font-mono);font-size:28px;font-weight:400;color:var(--gold);grid-row:1/3;display:flex;align-items:start;padding-top:2px}
+  .phase-title{font-size:16px;font-weight:700;margin-bottom:4px}
+  .phase-tasks{font-size:13px;line-height:1.8;color:var(--text-dim)}
+  .phase-tasks li{padding-left:14px;position:relative;list-style:none}
+  .phase-tasks li::before{content:'';width:6px;height:6px;border:1.5px solid var(--gold);border-radius:2px;position:absolute;left:0;top:7px}
+  /* Flow arrow */
+  .flow-arrow{display:flex;justify-content:center;align-items:center;gap:8px;color:var(--text-dim);font-family:var(--font-mono);font-size:11px;padding:6px 0}
+  .flow-arrow svg{width:18px;height:18px;fill:none;stroke:var(--border-bright);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  /* Two col */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .two-col>*{min-width:0}
+  /* Responsive */
+  @media(max-width:768px){body{padding:20px}.diff-grid,.two-col{grid-template-columns:1fr}h1{font-size:30px}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===== HEADER ===== -->
+  <div class="anim" style="--i:0">
+    <div class="mono">Implementation Plan</div>
+    <h1>Rails.logger &rarr; OTel</h1>
+    <p class="subtitle">When <code style="font-family:var(--font-mono);font-size:13px;background:var(--gold-dim);color:var(--gold);padding:1px 6px;border-radius:3px">integrate_tracing_logger: true</code>, every <code style="font-family:var(--font-mono);font-size:13px;background:var(--gold-dim);color:var(--gold);padding:1px 6px;border-radius:3px">Rails.logger</code> call automatically emits an OTel log record with trace context. Zero app code changes.</p>
+  </div>
+
+  <!-- ===== BEFORE / AFTER ===== -->
+  <h2 class="anim" style="--i:1">The Problem</h2>
+  <div class="diff-grid anim" style="--i:2">
+    <div class="diff-header diff-header--before">Current behavior</div>
+    <div class="diff-header diff-header--after">Desired behavior</div>
+    <div class="diff-body">
+      <ol>
+        <li>App calls <code>Rails.logger.info("Order placed")</code></li>
+        <li><code>TraceFormatter</code> appends trace/span IDs to text output</li>
+        <li>Log line written to STDOUT/file with IDs in text</li>
+        <li class="gap">OTel backend never sees this log</li>
+      </ol>
+      <p style="margin-top:12px;font-size:12px;color:var(--text-dim)">Only <code>Telemetry.log</code> reaches OTel. All <code>Rails.logger</code> calls &mdash; from app code, gems, Rails internals &mdash; are invisible to the OTel backend.</p>
+    </div>
+    <div class="diff-body">
+      <ol>
+        <li>App calls <code>Rails.logger.info("Order placed")</code></li>
+        <li><code>LogBridge</code> intercepts at <code>add</code> level</li>
+        <li>Original logger writes to STDOUT/file (with <code>TraceFormatter</code>)</li>
+        <li class="win">OTel LogRecord emitted with trace context</li>
+      </ol>
+      <p style="margin-top:12px;font-size:12px;color:var(--text-dim)">Every <code>Rails.logger</code> call appears in both text output and OTel backend. No app code changes needed.</p>
+    </div>
+  </div>
+
+  <!-- ===== DATA FLOW DIAGRAM ===== -->
+  <h2 class="anim" style="--i:3">Data Flow</h2>
+  <div class="mermaid-wrap anim" style="--i:4">
+    <div class="zoom-controls">
+      <button onclick="zoomDiagram(this,1.2)" title="Zoom in">+</button>
+      <button onclick="zoomDiagram(this,0.8)" title="Zoom out">&minus;</button>
+      <button onclick="resetZoom(this)" title="Reset">&#8634;</button>
+    </div>
+    <pre class="mermaid">
+flowchart TD
+    RL["Rails.logger.info(msg)"]
+    TL["Telemetry.log(:info, msg)"]
+    LB["LogBridge#add"]
+    TE["Telemetry::Logger#emit_otel"]
+    TF["TraceFormatter"]
+    OLP["OTel LoggerProvider"]
+    OUT["STDOUT / log file"]
+    OTLP["OTLP Export"]
+
+    RL --> LB
+    LB -->|"emit OTel record"| OLP
+    LB -->|super| TF
+    TF -->|"text + trace_id"| OUT
+    OLP --> OTLP
+
+    TL --> TE
+    TE -->|"emit OTel record"| OLP
+    TE -->|"skip_bridge=true"| RL
+
+    classDef bridge fill:#0e707022,stroke:#0e7070,stroke-width:2px
+    classDef otel fill:#a1620722,stroke:#a16207,stroke-width:2px
+    classDef output fill:#3d7c3f22,stroke:#3d7c3f,stroke-width:1.5px
+    class LB bridge
+    class OLP,OTLP otel
+    class TF,OUT output
+    </pre>
+  </div>
+  <p class="anim" style="--i:5;font-size:13px;color:var(--text-dim);text-align:center;margin-top:8px;font-family:var(--font-mono)">Thread-local <code style="font-family:var(--font-mono);font-size:11px;background:var(--teal-dim);color:var(--teal);padding:1px 5px;border-radius:3px">skip_bridge=true</code> prevents double OTel emission when Telemetry.log mirrors to Rails.logger</p>
+
+  <!-- ===== SEVERITY MAPPING ===== -->
+  <h2 class="anim" style="--i:6">Severity Mapping</h2>
+  <div class="table-wrap anim" style="--i:7">
+    <table>
+      <thead><tr><th>Ruby Logger</th><th>Constant</th><th>OTel Number</th><th>OTel Text</th></tr></thead>
+      <tbody>
+        <tr><td><code>Logger::DEBUG</code></td><td>0</td><td>5</td><td>DEBUG</td></tr>
+        <tr><td><code>Logger::INFO</code></td><td>1</td><td>9</td><td>INFO</td></tr>
+        <tr><td><code>Logger::WARN</code></td><td>2</td><td>13</td><td>WARN</td></tr>
+        <tr><td><code>Logger::ERROR</code></td><td>3</td><td>17</td><td>ERROR</td></tr>
+        <tr><td><code>Logger::FATAL</code></td><td>4</td><td>21</td><td>FATAL</td></tr>
+        <tr><td><code>Logger::UNKNOWN</code></td><td>5</td><td>21</td><td>FATAL</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== KEY CODE CHANGES ===== -->
+  <h2 class="anim" style="--i:8">Key Code Changes</h2>
+
+  <div class="two-col anim" style="--i:9">
+    <div>
+      <div class="code-file">
+        <div class="code-file__header"><span class="st st--new">new</span> lib/telemetry/log_bridge.rb</div>
+        <pre class="code-file__body"><code>module Telemetry
+  module LogBridge
+    RUBY_TO_OTEL_SEVERITY = {
+      0 => [5,  'DEBUG'],
+      1 => [9,  'INFO'],
+      2 => [13, 'WARN'],
+      3 => [17, 'ERROR'],
+      4 => [21, 'FATAL'],
+      5 => [21, 'FATAL']
+    }.freeze
+
+    def add(severity, message = nil, progname = nil)
+      if Thread.current[:telemetry_skip_otel_bridge]
+        return block_given? ? super { yield } : super
+      end
+
+      severity ||= ::Logger::UNKNOWN
+
+      if message.nil?
+        if block_given?
+          resolved_message = yield
+          result = super(severity, resolved_message, progname)
+        else
+          resolved_message = progname
+          result = super(severity, nil, progname)
+        end
+      else
+        resolved_message = message
+        result = super(severity, message, progname)
+      end
+
+      otel_severity = RUBY_TO_OTEL_SEVERITY[severity]
+      if otel_severity && resolved_message
+        span_ctx = OpenTelemetry::Trace.current_span.context
+        @telemetry_bridge_logger ||=
+          OpenTelemetry.logger_provider.logger(
+            name: 'telemetry.bridge',
+            version: Telemetry::VERSION
+          )
+        @telemetry_bridge_logger.on_emit(
+          severity_number: otel_severity[0],
+          severity_text:   otel_severity[1],
+          body: resolved_message.to_s,
+          trace_id:    span_ctx.valid? ? span_ctx.trace_id : nil,
+          span_id:     span_ctx.valid? ? span_ctx.span_id : nil,
+          trace_flags: span_ctx.valid? ? span_ctx.trace_flags : nil,
+          observed_timestamp: Time.now
+        )
+      end
+      result
+    end
+  end
+end</code></pre>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="code-file">
+        <div class="code-file__header"><span class="st st--warn">modified</span> lib/telemetry/logger.rb</div>
+        <pre class="code-file__body"><code># Dedup guard in emit
+def emit(level, message, rails_logger:)
+  emit_otel(level, message)
+  if rails_logger && defined?(::Rails)
+    begin
+      Thread.current[:telemetry_skip_otel_bridge] = true
+      ::Rails.logger.public_send(level, message)
+    ensure
+      Thread.current[:telemetry_skip_otel_bridge] = false
+    end
+  end
+end</code></pre>
+      </div>
+
+      <div class="code-file">
+        <div class="code-file__header"><span class="st st--warn">modified</span> lib/telemetry.rb</div>
+        <pre class="code-file__body"><code># wire_tracing_logger now also installs bridge
+def wire_tracing_logger
+  existing = Rails.logger.formatter
+  if existing && !existing.is_a?(TraceFormatter)
+    return if skip_formatter_replacement?(existing)
+    warn "[Telemetry] replacing existing logger formatter"
+  end
+  Rails.logger.formatter = TraceFormatter.new
+  Rails.logger.singleton_class.prepend(LogBridge)
+end</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== EDGE CASES ===== -->
+  <h2 class="anim" style="--i:10">Edge Cases</h2>
+  <div class="table-wrap anim" style="--i:11">
+    <table>
+      <thead><tr><th>Scenario</th><th>Expected Behavior</th></tr></thead>
+      <tbody>
+        <tr><td><code>Telemetry.log(:info, msg)</code> mirrors to <code>Rails.logger</code></td><td>Thread-local flag prevents LogBridge from re-emitting &mdash; OTel gets exactly 1 record</td></tr>
+        <tr><td><code>Telemetry.log(:info, msg, rails_logger: false)</code></td><td>OTel emission via <code>emit_otel</code> only. <code>Rails.logger</code> not called. No bridge involvement.</td></tr>
+        <tr><td>Block-form: <code>Rails.logger.info { expensive }</code></td><td>Block evaluated once by LogBridge, resolved value passed to <code>super</code>. No double evaluation.</td></tr>
+        <tr><td>Log level filtering: <code>Rails.logger.level = :warn</code></td><td>Logger's own <code>add</code> returns early for debug/info. Bridge's <code>super</code> handles filtering &mdash; OTel emission also skipped since <code>add</code> short-circuits before our interception runs. <em>Actually</em>: our override runs first, so we emit before super. See callout below.</td></tr>
+        <tr><td>Test mode with <code>SimpleFormatter</code></td><td><code>wire_tracing_logger</code> returns early &mdash; neither formatter nor bridge is installed</td></tr>
+        <tr><td><code>integrate_tracing_logger: false</code> (default)</td><td><code>wire_tracing_logger</code> never called &mdash; no bridge, no formatter change</td></tr>
+        <tr><td>Non-Rails (plain Rack)</td><td><code>defined?(Rails)</code> is false &mdash; bridge never installed. <code>Telemetry.log</code> works standalone.</td></tr>
+        <tr><td>Concurrent threads</td><td>Thread-local flag is per-thread &mdash; no cross-thread interference</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout--amber anim" style="--i:12">
+    <strong>Log level filtering note.</strong> The LogBridge <code>add</code> override runs <em>before</em> <code>super</code>'s level check. This means OTel records are emitted even for messages below the logger's level. This is arguably correct &mdash; OTel has its own level filtering at the backend. If strict filtering is needed, add a <code>severity &lt; level</code> early return in LogBridge.
+  </div>
+
+  <!-- ===== TEST REQUIREMENTS ===== -->
+  <h2 class="anim" style="--i:13">Test Requirements</h2>
+  <div class="table-wrap anim" style="--i:14">
+    <table>
+      <thead><tr><th>File</th><th>Test Name</th><th>Validates</th></tr></thead>
+      <tbody>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_emits_otel_log_record</td><td>Prepend on <code>::Logger</code>, call <code>.info</code>, verify <code>on_emit</code> with severity=9, body="hello"</td></tr>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_maps_all_severity_levels</td><td>Each level method maps to correct OTel severity number (5/9/13/17/21)</td></tr>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_attaches_trace_context</td><td>Inside a span, log record includes span's trace_id and span_id</td></tr>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_omits_trace_context_without_span</td><td>Outside any span, trace_id and span_id are nil</td></tr>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_handles_block_form</td><td><code>.info { "block" }</code> &mdash; body is "block", block evaluated once</td></tr>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_skips_when_thread_local_set</td><td>Thread-local flag suppresses OTel emission</td></tr>
+        <tr><td><code>log_bridge_test.rb</code></td><td>test_bridge_preserves_original_logger_output</td><td>Message still appears in logger's IO after bridge prepend</td></tr>
+        <tr><td><code>logger_test.rb</code></td><td>test_telemetry_log_does_not_double_emit_with_bridge</td><td><code>Telemetry.log</code> + bridged Rails.logger &rarr; exactly 1 OTel record</td></tr>
+        <tr><td><code>setup_test.rb</code></td><td>test_bridge_installed_when_integrate_tracing_logger_true</td><td><code>LogBridge</code> in <code>Rails.logger.singleton_class.ancestors</code></td></tr>
+        <tr><td><code>setup_test.rb</code></td><td>test_bridge_not_installed_by_default</td><td><code>LogBridge</code> NOT in ancestors when flag is false</td></tr>
+        <tr><td><code>setup_test.rb</code></td><td>test_bridge_skipped_in_test_mode_with_simple_formatter</td><td><code>LogBridge</code> NOT installed when SimpleFormatter skip is active</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== FILE MAP ===== -->
+  <h2 class="anim" style="--i:15">File Map</h2>
+  <div class="table-wrap anim" style="--i:16">
+    <table>
+      <thead><tr><th>File</th><th>Action</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td><code>lib/telemetry/log_bridge.rb</code></td><td><span class="st st--new">new</span></td><td><code>LogBridge</code> module &mdash; <code>add</code> override, severity map, OTel emission</td></tr>
+        <tr><td><code>lib/telemetry/logger.rb</code></td><td><span class="st st--warn">edit</span></td><td>Thread-local dedup guard in <code>emit</code></td></tr>
+        <tr><td><code>lib/telemetry.rb</code></td><td><span class="st st--warn">edit</span></td><td>Add <code>require</code>, prepend <code>LogBridge</code> in <code>wire_tracing_logger</code></td></tr>
+        <tr><td><code>test/telemetry/log_bridge_test.rb</code></td><td><span class="st st--new">new</span></td><td>7 tests for LogBridge in isolation</td></tr>
+        <tr><td><code>test/telemetry/logger_test.rb</code></td><td><span class="st st--warn">edit</span></td><td>1 deduplication test</td></tr>
+        <tr><td><code>test/telemetry/setup_test.rb</code></td><td><span class="st st--warn">edit</span></td><td>3 integration tests for bridge wiring</td></tr>
+        <tr><td><code>README.md</code></td><td><span class="st st--warn">edit</span></td><td>Config table, Logging section, TraceFormatter section</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <h2 class="anim" style="--i:17">Implementation Phases</h2>
+
+  <div class="anim" style="--i:18">
+    <div class="phase">
+      <div class="phase-num">01</div>
+      <div class="phase-title">LogBridge module + tests (TDD)</div>
+      <ul class="phase-tasks">
+        <li>Write <code>test/telemetry/log_bridge_test.rb</code> with tests 1&ndash;7</li>
+        <li>Create <code>lib/telemetry/log_bridge.rb</code></li>
+        <li>Run tests, verify all pass</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="phase-num">02</div>
+      <div class="phase-title">Deduplication in Telemetry::Logger (TDD)</div>
+      <ul class="phase-tasks">
+        <li>Write dedup test in <code>logger_test.rb</code></li>
+        <li>Update <code>Telemetry::Logger#emit</code> with thread-local guard</li>
+        <li>Run tests, verify all pass</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="phase-num">03</div>
+      <div class="phase-title">Wire into Telemetry.setup (TDD)</div>
+      <ul class="phase-tasks">
+        <li>Write integration tests 9&ndash;11 in <code>setup_test.rb</code></li>
+        <li>Add <code>require</code> and prepend in <code>wire_tracing_logger</code></li>
+        <li>Run full test suite</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="phase-num">04</div>
+      <div class="phase-title">README documentation</div>
+      <ul class="phase-tasks">
+        <li>Update config table, Logging section, TraceFormatter section</li>
+        <li>Review for consistency</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== CALLOUTS ===== -->
+  <div class="callout callout--sage anim" style="--i:19">
+    <strong>Backward compatibility.</strong> No breaking changes. <code>integrate_tracing_logger: false</code> (default) is completely unchanged. The bridge only activates on opt-in. <code>Telemetry.log</code> and <code>Telemetry.logger</code> continue to work identically.
+  </div>
+
+  <div class="callout callout--rose anim" style="--i:20">
+    <strong>Prepend is permanent.</strong> Once <code>LogBridge</code> is prepended onto <code>Rails.logger.singleton_class</code>, it cannot be cleanly removed. This is fine for production &mdash; the bridge is installed once at boot. But in tests, each test's <code>Telemetry.setup</code> would re-prepend. The module's idempotent behavior (checks thread-local, delegates to super) makes repeated prepends harmless.
+  </div>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    look: 'classic',
+    themeVariables: {
+      primaryColor: isDark ? '#2a2622' : '#fffdf9',
+      primaryBorderColor: isDark ? '#eab308' : '#a16207',
+      primaryTextColor: isDark ? '#ece5da' : '#1f1d1a',
+      secondaryColor: isDark ? '#1e2a1e' : '#f0fdf4',
+      secondaryBorderColor: isDark ? '#86efac' : '#3d7c3f',
+      secondaryTextColor: isDark ? '#ece5da' : '#1f1d1a',
+      tertiaryColor: isDark ? '#2a2218' : '#fef3c7',
+      tertiaryBorderColor: isDark ? '#fbbf24' : '#c2710c',
+      tertiaryTextColor: isDark ? '#ece5da' : '#1f1d1a',
+      lineColor: isDark ? '#64748b' : '#94a3b8',
+      fontSize: '15px',
+      fontFamily: 'var(--font-body)',
+      noteBkgColor: isDark ? '#2a2622' : '#fefce8',
+      noteTextColor: isDark ? '#ece5da' : '#1f1d1a',
+      noteBorderColor: isDark ? '#fbbf24' : '#c2710c',
+    }
+  });
+</script>
+<script>
+  var INITIAL_ZOOM = 1.3;
+  function zoomDiagram(btn, factor) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var target = wrap.querySelector('.mermaid');
+    var current = parseFloat(target.dataset.zoom || INITIAL_ZOOM);
+    var next = Math.min(Math.max(current * factor, 0.5), 5);
+    target.dataset.zoom = next;
+    target.style.zoom = next;
+  }
+  function resetZoom(btn) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var target = wrap.querySelector('.mermaid');
+    target.dataset.zoom = INITIAL_ZOOM;
+    target.style.zoom = INITIAL_ZOOM;
+  }
+  document.querySelectorAll('.mermaid-wrap').forEach(function(wrap) {
+    wrap.addEventListener('wheel', function(e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      var target = wrap.querySelector('.mermaid');
+      var current = parseFloat(target.dataset.zoom || INITIAL_ZOOM);
+      var factor = e.deltaY < 0 ? 1.1 : 0.9;
+      var next = Math.min(Math.max(current * factor, 0.5), 5);
+      target.dataset.zoom = next;
+      target.style.zoom = next;
+    }, { passive: false });
+    var startX, startY, scrollL, scrollT;
+    wrap.addEventListener('mousedown', function(e) {
+      if (e.target.closest('.zoom-controls')) return;
+      wrap.classList.add('is-panning');
+      startX = e.clientX; startY = e.clientY;
+      scrollL = wrap.scrollLeft; scrollT = wrap.scrollTop;
+    });
+    window.addEventListener('mousemove', function(e) {
+      if (!wrap.classList.contains('is-panning')) return;
+      wrap.scrollLeft = scrollL - (e.clientX - startX);
+      wrap.scrollTop = scrollT - (e.clientY - startY);
+    });
+    window.addEventListener('mouseup', function() { wrap.classList.remove('is-panning'); });
+  });
+</script>
+</body>
+</html>

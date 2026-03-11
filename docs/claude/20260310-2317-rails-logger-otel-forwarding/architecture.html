@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>otel-rb Logging Architecture — Current vs Desired</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-body: 'Crimson Pro', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+    --bg: #f6f4f0;
+    --surface: #ffffff;
+    --surface2: #eee9e3;
+    --surface-elevated: #fffcf8;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-bright: rgba(0, 0, 0, 0.16);
+    --text: #2c2a25;
+    --text-dim: #7c7568;
+
+    --blue: #1e3a5f;
+    --blue-dim: rgba(30, 58, 95, 0.08);
+    --gold: #b57614;
+    --gold-dim: rgba(181, 118, 20, 0.08);
+    --red: #9f1239;
+    --red-dim: rgba(159, 18, 57, 0.08);
+    --green: #3d6b35;
+    --green-dim: rgba(61, 107, 53, 0.08);
+    --teal: #0f766e;
+    --teal-dim: rgba(15, 118, 110, 0.08);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1816;
+      --surface: #242120;
+      --surface2: #2e2b28;
+      --surface-elevated: #302c28;
+      --border: rgba(255, 255, 255, 0.06);
+      --border-bright: rgba(255, 255, 255, 0.14);
+      --text: #e8e2d9;
+      --text-dim: #9a9285;
+
+      --blue: #7db4e0;
+      --blue-dim: rgba(125, 180, 224, 0.1);
+      --gold: #e0a832;
+      --gold-dim: rgba(224, 168, 50, 0.1);
+      --red: #f87171;
+      --red-dim: rgba(248, 113, 113, 0.1);
+      --green: #86efac;
+      --green-dim: rgba(134, 239, 172, 0.1);
+      --teal: #5eead4;
+      --teal-dim: rgba(94, 234, 212, 0.1);
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse at 30% 0%, var(--blue-dim) 0%, transparent 50%),
+      radial-gradient(ellipse at 70% 100%, var(--gold-dim) 0%, transparent 40%);
+    color: var(--text);
+    font-family: var(--font-body);
+    padding: 48px 40px;
+    min-height: 100vh;
+    overflow-wrap: break-word;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .anim {
+    animation: fadeUp 0.45s ease-out both;
+    animation-delay: calc(var(--i, 0) * 0.07s);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  .page { max-width: 1100px; margin: 0 auto; }
+
+  h1 {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    margin-bottom: 6px;
+    text-wrap: balance;
+    line-height: 1.1;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    margin-bottom: 48px;
+  }
+
+  h2 {
+    font-size: 26px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    letter-spacing: -0.5px;
+  }
+
+  /* ============ COMPARISON LAYOUT ============ */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 48px;
+  }
+
+  .comparison > * { min-width: 0; }
+
+  .flow-col { display: flex; flex-direction: column; gap: 0; }
+
+  .flow-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+    padding: 10px 20px;
+    border-radius: 10px 10px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .flow-header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .flow-header--current {
+    background: var(--blue-dim);
+    color: var(--blue);
+    border: 1px solid var(--blue-dim);
+    border-bottom: none;
+  }
+  .flow-header--current .dot { background: var(--blue); }
+
+  .flow-header--desired {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid var(--green-dim);
+    border-bottom: none;
+  }
+  .flow-header--desired .dot { background: var(--green); }
+
+  /* ============ FLOW CARD ============ */
+  .flow-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    position: relative;
+  }
+
+  .flow-card:first-of-type { border-radius: 0; }
+  .flow-card:last-child { border-radius: 0 0 10px 10px; }
+
+  .flow-card .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .flow-card .title {
+    font-weight: 600;
+    font-size: 17px;
+    margin-bottom: 4px;
+  }
+
+  .flow-card .desc {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .flow-card code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--gold-dim);
+    color: var(--gold);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  .flow-card--hero {
+    background: var(--surface-elevated);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  }
+
+  .flow-card--gap {
+    background: var(--red-dim);
+    border-color: color-mix(in srgb, var(--border) 50%, var(--red) 50%);
+  }
+
+  .flow-card--gap .title { color: var(--red); }
+
+  .flow-card--bridge {
+    background: var(--green-dim);
+    border-color: color-mix(in srgb, var(--border) 50%, var(--green) 50%);
+  }
+
+  .flow-card--bridge .title { color: var(--green); }
+
+  /* ============ FLOW ARROW (BETWEEN CARDS) ============ */
+  .flow-arrow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 2px 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  .flow-arrow svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: var(--border-bright);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ============ BADGE ============ */
+  .badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+  }
+
+  .badge--yes { background: var(--green-dim); color: var(--green); }
+  .badge--no { background: var(--red-dim); color: var(--red); }
+  .badge--new { background: var(--teal-dim); color: var(--teal); }
+
+  /* ============ DEDUP CALLOUT ============ */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 10px 10px 0;
+    padding: 18px 22px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-dim);
+    margin-top: 32px;
+  }
+
+  .callout strong { color: var(--text); }
+
+  .callout code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--gold-dim);
+    color: var(--gold);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ============ SUMMARY TABLE ============ */
+  .summary-section { margin-top: 48px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    border-bottom: 2px solid var(--border-bright);
+  }
+
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  td code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--gold-dim);
+    color: var(--gold);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 768px) {
+    body { padding: 20px; }
+    .comparison { grid-template-columns: 1fr; gap: 24px; }
+    h1 { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <h1 class="anim" style="--i:0">Rails Logger &times; OpenTelemetry</h1>
+  <p class="subtitle anim" style="--i:1">otel-rb logging architecture &mdash; current state vs desired state</p>
+
+  <div class="comparison">
+
+    <!-- ========== LEFT: CURRENT (Telemetry.log path) ========== -->
+    <div class="flow-col anim" style="--i:2">
+      <div class="flow-header flow-header--current"><span class="dot"></span> Current: Telemetry.log path</div>
+
+      <div class="flow-card flow-card--hero">
+        <div class="label">entry point</div>
+        <div class="title"><code>Telemetry.log(:info, msg)</code></div>
+        <div class="desc">Explicit OTel-aware logging call</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        Telemetry::Logger#emit
+      </div>
+
+      <div class="flow-card">
+        <div class="label">otel emission</div>
+        <div class="title">OTel LoggerProvider</div>
+        <div class="desc">Creates <code>LogRecord</code> with trace_id, span_id, severity. Exported via OTLP/HTTP. <span class="badge badge--yes">otel</span></div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        also mirrors to
+      </div>
+
+      <div class="flow-card">
+        <div class="label">text output</div>
+        <div class="title">Rails.logger</div>
+        <div class="desc"><code>TraceFormatter</code> appends trace/span IDs to text output &rarr; STDOUT/file. <span class="badge badge--yes">correlated</span></div>
+      </div>
+    </div>
+
+    <!-- ========== RIGHT: CURRENT (Rails.logger path) ========== -->
+    <div class="flow-col anim" style="--i:3">
+      <div class="flow-header flow-header--current"><span class="dot"></span> Current: Rails.logger path</div>
+
+      <div class="flow-card flow-card--hero">
+        <div class="label">entry point</div>
+        <div class="title"><code>Rails.logger.info(msg)</code></div>
+        <div class="desc">Standard Rails logging &mdash; used by app code, gems, Rails internals</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        integrate_tracing_logger: true
+      </div>
+
+      <div class="flow-card">
+        <div class="label">formatter only</div>
+        <div class="title">TraceFormatter</div>
+        <div class="desc">Appends <code>trace_id=... span_id=...</code> to log line text. Correlation in text only. <span class="badge badge--yes">correlated</span></div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        written to
+      </div>
+
+      <div class="flow-card">
+        <div class="label">text output</div>
+        <div class="title">STDOUT / log file</div>
+        <div class="desc">Log line with trace IDs in text, but only as text.</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+      </div>
+
+      <div class="flow-card flow-card--gap">
+        <div class="label">the gap</div>
+        <div class="title">No OTel LogRecord emitted</div>
+        <div class="desc"><code>Rails.logger</code> calls never reach the OTel LoggerProvider. These logs are invisible to your OTel backend. <span class="badge badge--no">missing</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========== DESIRED STATE ========== -->
+  <h2 class="anim" style="--i:5">Desired: Bridge Rails.logger &rarr; OTel <span style="font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--gold);background:var(--gold-dim);padding:2px 10px;border-radius:4px;vertical-align:middle;margin-left:8px;">when integrate_tracing_logger: true</span></h2>
+
+  <div class="comparison">
+
+    <div class="flow-col anim" style="--i:6">
+      <div class="flow-header flow-header--desired"><span class="dot"></span> Desired: Rails.logger path</div>
+
+      <div class="flow-card flow-card--hero">
+        <div class="label">entry point &mdash; requires <code>integrate_tracing_logger: true</code></div>
+        <div class="title"><code>Rails.logger.info(msg)</code></div>
+        <div class="desc">Same standard Rails logging &mdash; no app code changes needed. Bridge only active when opted in.</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        intercepted by
+      </div>
+
+      <div class="flow-card flow-card--bridge">
+        <div class="label">new bridge</div>
+        <div class="title">OTel Log Subscriber <span class="badge badge--new">new</span></div>
+        <div class="desc">Intercepts <code>Rails.logger</code> calls at the <code>add</code> level. Emits an OTel <code>LogRecord</code> with trace context and severity mapping.</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        dual output
+      </div>
+
+      <div class="flow-card">
+        <div class="label">both destinations</div>
+        <div class="title">OTel LogRecord + Text Output</div>
+        <div class="desc">Every <code>Rails.logger</code> call produces an OTel log record (exported via OTLP) AND the original text output with trace IDs. <span class="badge badge--yes">otel</span> <span class="badge badge--yes">correlated</span></div>
+      </div>
+    </div>
+
+    <div class="flow-col anim" style="--i:7">
+      <div class="flow-header flow-header--desired"><span class="dot"></span> Desired: Telemetry.log path</div>
+
+      <div class="flow-card flow-card--hero">
+        <div class="label">entry point</div>
+        <div class="title"><code>Telemetry.log(:info, msg)</code></div>
+        <div class="desc">Still available for OTel-only logs (<code>rails_logger: false</code>)</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        emit_otel directly
+      </div>
+
+      <div class="flow-card">
+        <div class="label">otel emission</div>
+        <div class="title">OTel LoggerProvider</div>
+        <div class="desc">Direct OTel emission &mdash; same as before. <span class="badge badge--yes">otel</span></div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 20 20"><path d="M10 4 L10 16 M6 12 L10 16 L14 12"/></svg>
+        mirrors to Rails.logger
+      </div>
+
+      <div class="flow-card flow-card--bridge">
+        <div class="label">deduplication</div>
+        <div class="title">Skip re-emission <span class="badge badge--new">new</span></div>
+        <div class="desc">When <code>Telemetry.log</code> mirrors to <code>Rails.logger</code>, the bridge must NOT re-emit to OTel. Thread-local guard prevents double emission.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========== DEDUP CALLOUT ========== -->
+  <div class="callout anim" style="--i:8">
+    <strong>Deduplication is critical.</strong> Without it, <code>Telemetry.log(:info, msg)</code> would emit the same log record twice &mdash; once via <code>emit_otel</code> directly, and once when the mirrored <code>Rails.logger.info(msg)</code> triggers the bridge. A thread-local flag (<code>Thread.current[:telemetry_skip_otel_bridge]</code>) prevents re-entrant emission.
+  </div>
+
+  <!-- ========== SUMMARY TABLE ========== -->
+  <div class="summary-section anim" style="--i:9">
+    <h2>Capability Matrix</h2>
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 16px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Call Site</th>
+            <th>Text Output</th>
+            <th>Trace IDs in Text</th>
+            <th>OTel LogRecord</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Telemetry.log(:info, msg)</code></td>
+            <td><span class="badge badge--yes">yes</span> via Rails.logger mirror</td>
+            <td><span class="badge badge--yes">yes</span> via TraceFormatter</td>
+            <td><span class="badge badge--yes">yes</span> via emit_otel</td>
+          </tr>
+          <tr>
+            <td><code>Telemetry.log(:info, msg, rails_logger: false)</code></td>
+            <td><span class="badge badge--no">no</span> suppressed</td>
+            <td>&mdash;</td>
+            <td><span class="badge badge--yes">yes</span> via emit_otel</td>
+          </tr>
+          <tr>
+            <td><code>Rails.logger.info(msg)</code> <strong>current</strong></td>
+            <td><span class="badge badge--yes">yes</span></td>
+            <td><span class="badge badge--yes">yes</span> if integrate_tracing_logger</td>
+            <td><span class="badge badge--no">no</span></td>
+          </tr>
+          <tr>
+            <td><code>Rails.logger.info(msg)</code> <strong>desired</strong> (integrate_tracing_logger: true)</td>
+            <td><span class="badge badge--yes">yes</span></td>
+            <td><span class="badge badge--yes">yes</span> via TraceFormatter</td>
+            <td><span class="badge badge--yes">yes</span> via bridge</td>
+          </tr>
+          <tr>
+            <td><code>Rails.logger.info(msg)</code> (integrate_tracing_logger: false)</td>
+            <td><span class="badge badge--yes">yes</span></td>
+            <td><span class="badge badge--no">no</span> default formatter</td>
+            <td><span class="badge badge--no">no</span> no bridge</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
