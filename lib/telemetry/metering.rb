@@ -2,7 +2,9 @@
 
 module Telemetry
   # Private dispatch logic for metric instruments.
-  # Extended into the Telemetry module's singleton class.
+  # Included into the Telemetry module's singleton class.
+  # The including class must expose +@meter+ (an OpenTelemetry::Metrics::Meter)
+  # and +@instruments+ (a Hash cache, may be nil before first use).
   # @api private
   module Metering
     INSTRUMENT_TYPES = {

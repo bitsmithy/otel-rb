@@ -1,23 +1,27 @@
 # frozen_string_literal: true
 
 require 'opentelemetry/trace'
+require_relative 'logger'
 
 module Telemetry
   # Intercepts Rails.logger calls and emits OTel log records.
   # Prepended onto Rails.logger's singleton class when
-  # integrate_tracing_logger: true.
+  # integrate_tracing_logger: true. The prepended class must respond to
+  # +add+ with the standard Ruby Logger signature.
   module LogBridge
+    # Maps Ruby Logger integer severity (0=DEBUG..4=FATAL, 5=UNKNOWN->FATAL)
+    # to [severity_number, severity_text] pairs derived from Logger::OTEL_SEVERITY.
     RUBY_TO_OTEL_SEVERITY = {
-      0 => [5,  'DEBUG'],
-      1 => [9,  'INFO'],
-      2 => [13, 'WARN'],
-      3 => [17, 'ERROR'],
-      4 => [21, 'FATAL'],
-      5 => [21, 'FATAL']
+      0 => Logger::OTEL_SEVERITY[:debug],
+      1 => Logger::OTEL_SEVERITY[:info],
+      2 => Logger::OTEL_SEVERITY[:warn],
+      3 => Logger::OTEL_SEVERITY[:error],
+      4 => Logger::OTEL_SEVERITY[:fatal],
+      5 => Logger::OTEL_SEVERITY[:fatal]
     }.freeze
 
     def add(severity, message = nil, progname = nil, &)
-      return super if Thread.current[:telemetry_skip_otel_bridge]
+      return super if Thread.current[Logger::SKIP_OTEL_BRIDGE_KEY]
 
       severity ||= ::Logger::UNKNOWN
 
@@ -45,8 +49,6 @@ module Telemetry
       otel_severity = RUBY_TO_OTEL_SEVERITY[severity]
       return unless otel_severity
 
-      span_context = OpenTelemetry::Trace.current_span.context
-
       @telemetry_bridge_logger ||= OpenTelemetry.logger_provider.logger(
         name: 'telemetry.bridge', version: Telemetry::VERSION
       )
@@ -55,15 +57,12 @@ module Telemetry
       request_id = Thread.current[Middleware::THREAD_REQUEST_ID_KEY]
       attrs['request.id'] = request_id if request_id
 
-      @telemetry_bridge_logger.on_emit(
+      OtelEmission.call(
+        @telemetry_bridge_logger,
         severity_number: otel_severity[0],
         severity_text: otel_severity[1],
         body: message.to_s,
-        attributes: attrs,
-        trace_id: span_context.valid? ? span_context.trace_id : nil,
-        span_id: span_context.valid? ? span_context.span_id : nil,
-        trace_flags: span_context.valid? ? span_context.trace_flags : nil,
-        observed_timestamp: Time.now
+        attributes: attrs
       )
     end
   end

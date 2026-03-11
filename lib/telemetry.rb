@@ -94,7 +94,7 @@ module Telemetry
       nil
     end
 
-    # Returns a cached Counter, or records a value immediately.
+    # Returns a cached Counter/Gauge/UpDownCounter, or records a value immediately.
     #
     # @overload counter(name, unit: nil, description: nil)
     #   Returns the cached instrument handle.
@@ -103,9 +103,12 @@ module Telemetry
     #   Records +value+ immediately and returns nil.
     #   @param value [Numeric]
     #   @param attrs [Hash]
-    def counter(name, *rest, **kwargs)
-      value, attrs, unit, description = parse_rest(rest, kwargs)
-      dispatch(:counter, name, value, attrs, { unit: unit, description: description })
+    # (same overload contract applies to +gauge+ and +up_down_counter+)
+    %i[counter gauge up_down_counter].each do |type|
+      define_method(type) do |name, *rest, **kwargs|
+        value, attrs, unit, description = parse_rest(rest, kwargs)
+        dispatch(type, name, value, attrs, { unit: unit, description: description })
+      end
     end
 
     # Returns a cached Histogram, records a value, or times a block.
@@ -132,34 +135,6 @@ module Telemetry
       else
         dispatch(:histogram, name, value, attrs, { unit: unit, description: description })
       end
-    end
-
-    # Returns a cached Gauge, or records a value immediately.
-    #
-    # @overload gauge(name, unit: nil, description: nil)
-    #   Returns the cached instrument handle.
-    #   @return [Instruments::Gauge]
-    # @overload gauge(name, value, attrs = {})
-    #   Records +value+ immediately.
-    #   @param value [Numeric]
-    #   @param attrs [Hash]
-    def gauge(name, *rest, **kwargs)
-      value, attrs, unit, description = parse_rest(rest, kwargs)
-      dispatch(:gauge, name, value, attrs, { unit: unit, description: description })
-    end
-
-    # Returns a cached UpDownCounter, or records a value immediately.
-    #
-    # @overload up_down_counter(name, unit: nil, description: nil)
-    #   Returns the cached instrument handle.
-    #   @return [Instruments::UpDownCounter]
-    # @overload up_down_counter(name, value, attrs = {})
-    #   Records +value+ immediately.
-    #   @param value [Numeric]
-    #   @param attrs [Hash]
-    def up_down_counter(name, *rest, **kwargs)
-      value, attrs, unit, description = parse_rest(rest, kwargs)
-      dispatch(:up_down_counter, name, value, attrs, { unit: unit, description: description })
     end
 
     # Times a block and records wall-clock duration (milliseconds) as a histogram.
