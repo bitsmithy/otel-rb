@@ -62,7 +62,15 @@ module Telemetry
 
     def emit(level, message, rails_logger:)
       emit_otel(level, message)
-      ::Rails.logger.public_send(level, message) if rails_logger && defined?(::Rails)
+      return unless rails_logger && defined?(::Rails)
+
+      prior = Thread.current[:telemetry_skip_otel_bridge]
+      begin
+        Thread.current[:telemetry_skip_otel_bridge] = true
+        ::Rails.logger.public_send(level, message)
+      ensure
+        Thread.current[:telemetry_skip_otel_bridge] = prior
+      end
     end
 
     def emit_otel(level, message)

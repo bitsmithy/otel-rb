@@ -30,7 +30,7 @@ All options are optional. Pass them as keywords to `Telemetry.setup`:
 | `service_namespace` | Parent directory name | Reported service namespace |
 | `service_version` | `ENV["SERVICE_VERSION"]` or `"unknown"` | Reported service version |
 | `endpoint` | `nil` | OTLP endpoint URL; nil uses `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| `integrate_tracing_logger` | `false` | When `true`, assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/log correlation |
+| `integrate_tracing_logger` | `false` | When `true`, replaces `Rails.logger.formatter` with `TraceFormatter` and forwards all `Rails.logger` calls to OTel as log records |
 
 ## Setup
 
@@ -54,7 +54,8 @@ When Rails is detected, setup always:
 
 With `integrate_tracing_logger: true`, setup also:
 
-- Assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/span ID correlation
+- Assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/span ID correlation in text output
+- Bridges `Rails.logger` to OTel — every `Rails.logger` call also emits an OTel log record with trace context
 
 `Telemetry::Middleware` traces every request and records metrics for each one.
 
@@ -231,14 +232,20 @@ end
 
 ## Logging
 
-**`Telemetry.log`** — module-level shorthand:
+### Via Rails.logger (recommended with `integrate_tracing_logger: true`)
+
+When `integrate_tracing_logger: true`, every `Rails.logger` call automatically emits an OTel log record with trace context. No code changes needed — existing `Rails.logger.info("...")` calls just start appearing in your OTel backend.
+
+### Via Telemetry.log / Telemetry.logger
+
+`Telemetry.log` emits directly to OTel and optionally mirrors to `Rails.logger`:
 
 ```ruby
-Telemetry.log(:info,  "Order placed") # Logs to both OTel and wherever Rails.logger writes to
-Telemetry.log(:error, "Charge failed", rails_logger: false)  # Logs ONLY to OTel. This log line will not surface wherever Rails.logger writes to
+Telemetry.log(:info,  "Order placed")                        # OTel + Rails.logger
+Telemetry.log(:error, "Charge failed", rails_logger: false)  # OTel only
 ```
 
-**`Telemetry.logger`** — returns the `Telemetry::Logger` instance for reuse:
+`Telemetry.logger` returns the `Telemetry::Logger` instance:
 
 ```ruby
 Telemetry.logger.warn("Low balance", rails_logger: true)
@@ -246,11 +253,13 @@ Telemetry.logger.warn("Low balance", rails_logger: true)
 
 Available levels: `debug`, `info`, `warn`, `error`, `fatal`.
 
-When Rails is present, calls also delegate to `Rails.logger` by default. Pass `rails_logger: false` to suppress for a specific call.
+When `integrate_tracing_logger: true`, you only need `Telemetry.log` for OTel-only logs that should NOT appear in `Rails.logger` output:
+
+```ruby
+Telemetry.log(:debug, "internal detail", rails_logger: false)
+```
 
 ## TraceFormatter
-
-**TraceFormatter (or `Telemetry.log` / `Telemetry.logger`) is required for log-trace correlation.** Plain `Rails.logger` without TraceFormatter emits no trace/span IDs — those logs are impossible to correlate with your traces in an observability backend.
 
 With `integrate_tracing_logger: true`, `TraceFormatter` is assigned to `Rails.logger.formatter` automatically. Every log line is enriched with the active trace and span IDs (IDs are omitted when no span is active):
 
@@ -259,9 +268,12 @@ I, [2026-03-10T12:00:00.000000 #1234]  INFO -- app: Order placed
   trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7
 ```
 
-If you `integrate_tracing_logger`, there is no reason to use `Telemetry.log` / `Telemetry.logger` unless there's a log line you do NOT want to show up where `Rails.logger` writes to: `Telemetry.log("something", rails_logger: false)`
+This means `Rails.logger` calls get trace correlation in two places:
 
-If you prefer not to replace `Rails.logger.formatter`, use `Telemetry.log` / `Telemetry.logger` directly — these always emit with trace context attached, regardless of the `integrate_tracing_logger` setting.
+1. **Text output** — trace/span IDs appended to the log line (for log files, STDOUT)
+2. **OTel backend** — structured `LogRecord` with trace context (for your observability platform)
+
+If you prefer not to replace `Rails.logger.formatter`, use `Telemetry.log` / `Telemetry.logger` directly — these always emit OTel log records with trace context, regardless of the `integrate_tracing_logger` setting.
 
 ## Error handling
 

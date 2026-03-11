@@ -98,4 +98,51 @@ class LoggerTest < Minitest::Test
 
     assert_empty received
   end
+
+  # --- Bridge deduplication ---
+
+  def test_telemetry_log_does_not_double_emit_with_bridge
+    require 'telemetry/log_bridge'
+
+    bridge_emissions = []
+    mock_otel_logger = Object.new
+    mock_otel_logger.define_singleton_method(:on_emit) { |**kwargs| bridge_emissions << kwargs }
+
+    fake_rails_logger = ::Logger.new(StringIO.new)
+    fake_rails_logger.singleton_class.prepend(Telemetry::LogBridge)
+    fake_rails_logger.instance_variable_set(:@telemetry_bridge_logger, mock_otel_logger)
+
+    fake_rails = Module.new { def self.logger; end }
+
+    stub_const(:Rails, fake_rails) do
+      fake_rails.stub(:logger, fake_rails_logger) do
+        Telemetry.log(:info, 'msg')
+      end
+    end
+
+    assert_empty bridge_emissions, 'LogBridge must not re-emit to OTel when Telemetry.log mirrors to Rails.logger'
+  end
+
+  def test_emit_restores_prior_skip_flag_value
+    require 'telemetry/log_bridge'
+
+    fake_rails_logger = ::Logger.new(StringIO.new)
+    fake_rails_logger.singleton_class.prepend(Telemetry::LogBridge)
+    fake_rails_logger.instance_variable_set(:@telemetry_bridge_logger,
+                                            Object.new.tap { |m| m.define_singleton_method(:on_emit) { |**_| nil } })
+
+    flag_after_inner_call = :not_set
+    fake_rails = Module.new { def self.logger; end }
+
+    Thread.current[:telemetry_skip_otel_bridge] = true
+    stub_const(:Rails, fake_rails) do
+      fake_rails.stub(:logger, fake_rails_logger) do
+        Telemetry.log(:info, 'msg')
+      end
+    end
+    flag_after_inner_call = Thread.current[:telemetry_skip_otel_bridge]
+  ensure
+    Thread.current[:telemetry_skip_otel_bridge] = nil
+    assert flag_after_inner_call, 'emit must restore the pre-existing true flag value, not reset it to false'
+  end
 end
