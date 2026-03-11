@@ -7,19 +7,33 @@ require 'telemetry/log_bridge'
 
 class LogBridgeTest < Minitest::Test
   def teardown
-    Thread.current[:telemetry_skip_otel_bridge] = nil
+    Thread.current[Telemetry::Logger::SKIP_OTEL_BRIDGE_KEY] = nil
   end
 
   # --- OTel emission ---
 
-  def test_bridge_emits_otel_log_record
+  def test_bridge_emits_one_otel_record
     logger, emissions = bridged_logger
     logger.info('hello')
-
     assert_equal 1, emissions.size
+  end
+
+  def test_bridge_emits_correct_severity
+    logger, emissions = bridged_logger
+    logger.info('hello')
     assert_equal 9, emissions.first[:severity_number]
     assert_equal 'INFO', emissions.first[:severity_text]
+  end
+
+  def test_bridge_emits_correct_body
+    logger, emissions = bridged_logger
+    logger.info('hello')
     assert_equal 'hello', emissions.first[:body]
+  end
+
+  def test_bridge_emits_level_attribute
+    logger, emissions = bridged_logger
+    logger.info('hello')
     assert_equal 'info', emissions.first[:attributes]['level']
   end
 
@@ -60,16 +74,19 @@ class LogBridgeTest < Minitest::Test
 
   # --- Block form ---
 
-  def test_bridge_handles_block_form
-    logger, emissions = bridged_logger
+  def test_bridge_evaluates_block_exactly_once
+    logger, _emissions = bridged_logger
     eval_count = 0
-
     logger.info do
       eval_count += 1
       'from block'
     end
-
     assert_equal 1, eval_count
+  end
+
+  def test_bridge_emits_block_return_value
+    logger, emissions = bridged_logger
+    logger.info { 'from block' }
     assert_equal 1, emissions.size
     assert_equal 'from block', emissions.first[:body]
   end
@@ -79,7 +96,7 @@ class LogBridgeTest < Minitest::Test
   def test_bridge_skips_when_thread_local_set
     logger, emissions = bridged_logger
 
-    Thread.current[:telemetry_skip_otel_bridge] = true
+    Thread.current[Telemetry::Logger::SKIP_OTEL_BRIDGE_KEY] = true
     logger.info('skipped')
 
     assert_empty emissions

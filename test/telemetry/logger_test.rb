@@ -3,10 +3,6 @@
 require 'test_helper'
 
 class LoggerTest < Minitest::Test
-  def setup
-    Telemetry.setup(service_name: 'test-service')
-  end
-
   # --- Telemetry.logger ---
 
   def test_logger_returns_logger_instance
@@ -42,9 +38,6 @@ class LoggerTest < Minitest::Test
   # --- OTel emit works (SDK is a hard dependency) ---
 
   def test_otel_emit_does_not_warn
-    Telemetry.reset!
-    Telemetry.setup(service_name: 'test-service')
-
     _out, err = capture_io { Telemetry.log(:info, 'hello') }
     assert_empty err
   end
@@ -52,51 +45,24 @@ class LoggerTest < Minitest::Test
   # --- rails_logger: delegation ---
 
   def test_rails_logger_delegation
-    received = []
-    fake_rails_logger = Object.new
-    fake_rails_logger.define_singleton_method(:info) { |msg| received << msg }
-
-    fake_rails = Module.new { def self.logger; end }
-
-    stub_const(:Rails, fake_rails) do
-      fake_rails.stub(:logger, fake_rails_logger) do
-        Telemetry.log(:info, 'from rails')
-      end
+    with_fake_rails_logger(:info) do |received|
+      Telemetry.log(:info, 'from rails')
+      assert_equal ['from rails'], received
     end
-
-    assert_equal ['from rails'], received
   end
 
   def test_logger_instance_with_rails_logger_true
-    received = []
-    fake_rails_logger = Object.new
-    fake_rails_logger.define_singleton_method(:warn) { |msg| received << msg }
-
-    fake_rails = Module.new { def self.logger; end }
-
-    stub_const(:Rails, fake_rails) do
-      fake_rails.stub(:logger, fake_rails_logger) do
-        Telemetry.logger.warn('Low balance', rails_logger: true)
-      end
+    with_fake_rails_logger(:warn) do |received|
+      Telemetry.logger.warn('Low balance', rails_logger: true)
+      assert_equal ['Low balance'], received
     end
-
-    assert_equal ['Low balance'], received
   end
 
   def test_rails_logger_opt_out
-    received = []
-    fake_rails_logger = Object.new
-    fake_rails_logger.define_singleton_method(:info) { |msg| received << msg }
-
-    fake_rails = Module.new { def self.logger; end }
-
-    stub_const(:Rails, fake_rails) do
-      fake_rails.stub(:logger, fake_rails_logger) do
-        Telemetry.log(:info, 'silent', rails_logger: false)
-      end
+    with_fake_rails_logger(:info) do |received|
+      Telemetry.log(:info, 'silent', rails_logger: false)
+      assert_empty received
     end
-
-    assert_empty received
   end
 
   # --- Bridge deduplication ---
@@ -134,15 +100,31 @@ class LoggerTest < Minitest::Test
     flag_after_inner_call = :not_set
     fake_rails = Module.new { def self.logger; end }
 
-    Thread.current[:telemetry_skip_otel_bridge] = true
+    Thread.current[Telemetry::Logger::SKIP_OTEL_BRIDGE_KEY] = true
     stub_const(:Rails, fake_rails) do
       fake_rails.stub(:logger, fake_rails_logger) do
         Telemetry.log(:info, 'msg')
       end
     end
-    flag_after_inner_call = Thread.current[:telemetry_skip_otel_bridge]
+    flag_after_inner_call = Thread.current[Telemetry::Logger::SKIP_OTEL_BRIDGE_KEY]
   ensure
-    Thread.current[:telemetry_skip_otel_bridge] = nil
+    Thread.current[Telemetry::Logger::SKIP_OTEL_BRIDGE_KEY] = nil
     assert flag_after_inner_call, 'emit must restore the pre-existing true flag value, not reset it to false'
+  end
+
+  private
+
+  def with_fake_rails_logger(level)
+    received = []
+    fake_rails_logger = Object.new
+    fake_rails_logger.define_singleton_method(level) { |msg| received << msg }
+
+    fake_rails = Module.new { def self.logger; end }
+
+    stub_const(:Rails, fake_rails) do
+      fake_rails.stub(:logger, fake_rails_logger) do
+        yield received
+      end
+    end
   end
 end

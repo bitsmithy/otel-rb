@@ -3,11 +3,16 @@
 require 'test_helper'
 
 class ConfigTest < Minitest::Test
-  def test_defaults
-    config = Telemetry::Config.new
-    refute_nil config.service_name
-    refute_nil config.service_namespace
-    refute_nil config.service_version
+  def test_default_service_name
+    refute_nil Telemetry::Config.new.service_name
+  end
+
+  def test_default_service_namespace
+    refute_nil Telemetry::Config.new.service_namespace
+  end
+
+  def test_default_service_version
+    refute_nil Telemetry::Config.new.service_version
   end
 
   def test_integrate_tracing_logger_default_false

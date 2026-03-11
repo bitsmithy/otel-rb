@@ -6,31 +6,23 @@ require 'active_support/logger'
 class SetupTest < Minitest::Test
   # --- Telemetry.setup (module-level) ---
 
-  def test_setup_accepts_keyword_args
-    assert_nil Telemetry.setup(service_name: 'test-service')
-  end
-
   def test_setup_returns_nil
     assert_nil Telemetry.setup(service_name: 'test-service')
   end
 
   def test_tracer_assigned_after_setup
-    Telemetry.setup(service_name: 'test-service')
     assert_respond_to Telemetry.tracer, :in_span
   end
 
   def test_meter_available_after_setup
-    Telemetry.setup(service_name: 'test-service')
     refute_nil Telemetry.meter
   end
 
   def test_counter_handle_available_after_setup
-    Telemetry.setup(service_name: 'test-service')
     refute_nil Telemetry.counter('test.counter')
   end
 
   def test_logger_available_after_setup
-    Telemetry.setup(service_name: 'test-service')
     assert_instance_of Telemetry::Logger, Telemetry.logger
   end
 
@@ -62,31 +54,10 @@ class SetupTest < Minitest::Test
 
   def test_middleware_always_inserted_in_rails
     inserted_args = nil
-    middleware_stack = Object.new
-    middleware_stack.define_singleton_method(:use) { |*args| inserted_args = args }
 
-    app_config = Object.new
-    app_config.define_singleton_method(:middleware) { middleware_stack }
-    rails_app = Object.new
-    rails_app.define_singleton_method(:config) { app_config }
-
-    rails_logger = Object.new
-    rails_logger.define_singleton_method(:formatter)  { nil }
-    rails_logger.define_singleton_method(:formatter=) { |_f| nil }
-
-    fake_rails = Module.new do
-      def self.application; end
-
-      def self.logger; end
-    end
-
-    stub_const(:Rails, fake_rails) do
-      fake_rails.stub(:application, rails_app) do
-        fake_rails.stub(:logger, rails_logger) do
-          # integrate_tracing_logger defaults to false — middleware still inserted
-          Telemetry.setup(service_name: 'test-service')
-        end
-      end
+    # integrate_tracing_logger defaults to false — middleware still inserted
+    with_fake_rails(on_middleware_use: ->(args) { inserted_args = args }) do
+      Telemetry.setup(service_name: 'test-service')
     end
 
     assert_equal [Telemetry::Middleware], inserted_args
@@ -134,11 +105,15 @@ class SetupTest < Minitest::Test
 
   # --- test_mode! auto-setup ---
 
-  def test_before_setup_re_runs_setup_automatically
-    # before_setup (from test_mode!) already ran for this test, resetting state.
-    # Telemetry should be usable without the consumer calling setup in each test.
+  def test_auto_setup_provides_tracer
     assert_respond_to Telemetry.tracer, :in_span
+  end
+
+  def test_auto_setup_provides_meter
     refute_nil Telemetry.meter
+  end
+
+  def test_auto_setup_provides_logger
     assert_instance_of Telemetry::Logger, Telemetry.logger
   end
 
@@ -177,10 +152,15 @@ class SetupTest < Minitest::Test
 
   # --- Telemetry::Setup internal contract ---
 
-  def test_setup_module_returns_tracer_and_shutdown
+  def test_setup_module_returns_tracer
     config = Telemetry::Config.new(service_name: 'test-service')
     result = Telemetry::Setup.call(config)
     assert_respond_to result[:tracer], :in_span
+  end
+
+  def test_setup_module_returns_shutdown_proc
+    config = Telemetry::Config.new(service_name: 'test-service')
+    result = Telemetry::Setup.call(config)
     assert_kind_of Proc, result[:shutdown]
   end
 
@@ -249,9 +229,9 @@ class SetupTest < Minitest::Test
     logger
   end
 
-  def with_fake_rails(formatter: nil, logger: nil, &block)
+  def with_fake_rails(formatter: nil, logger: nil, on_middleware_use: nil, &block)
     middleware_stack = Object.new
-    middleware_stack.define_singleton_method(:use) { |*_args| nil }
+    middleware_stack.define_singleton_method(:use) { |*args| on_middleware_use&.call(args) }
 
     app_config = Object.new
     app_config.define_singleton_method(:middleware) { middleware_stack }

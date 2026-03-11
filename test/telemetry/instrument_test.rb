@@ -3,10 +3,6 @@
 require 'test_helper'
 
 class InstrumentTest < Minitest::Test
-  def setup
-    Telemetry.setup(service_name: 'test-service')
-  end
-
   # --- Telemetry.meter (raw OTel meter) ---
 
   def test_meter_returns_otel_meter_after_setup

@@ -141,8 +141,7 @@ class MiddlewareTest < Minitest::Test
     mw, _exporter, meter_provider = middleware_with_metrics
     Rack::MockRequest.new(mw).get('/ping')
 
-    streams = metric_streams(meter_provider)
-    count_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_COUNT }
+    count_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_REQUEST_COUNT)
     refute_nil count_stream, 'http.server.request.count stream not found'
 
     data_points = count_stream.instance_variable_get(:@data_points)
@@ -157,8 +156,7 @@ class MiddlewareTest < Minitest::Test
     mw, _exporter, meter_provider = middleware_with_metrics
     Rack::MockRequest.new(mw).get('/ping')
 
-    streams = metric_streams(meter_provider)
-    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    dur_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION)
     refute_nil dur_stream, 'http.server.request.duration stream not found'
 
     data_points = dur_stream.instance_variable_get(:@data_points)
@@ -175,8 +173,7 @@ class MiddlewareTest < Minitest::Test
     mw, _exporter, meter_provider = middleware_with_metrics(inner)
     Rack::MockRequest.new(mw).get('/ping')
 
-    streams = metric_streams(meter_provider)
-    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    dur_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION)
     data_point = dur_stream.instance_variable_get(:@data_points).values.first
 
     assert_in_delta 50, data_point.sum, 25
@@ -190,8 +187,7 @@ class MiddlewareTest < Minitest::Test
     mw, _exporter, meter_provider = middleware_with_metrics(inner)
     Rack::MockRequest.new(mw).get('/users/1')
 
-    streams = metric_streams(meter_provider)
-    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    dur_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION)
     attrs = dur_stream.instance_variable_get(:@data_points).keys.first
     assert_equal 'users', attrs['rails.controller']
     assert_equal 'show',  attrs['rails.action']
@@ -202,8 +198,7 @@ class MiddlewareTest < Minitest::Test
     mw, _exporter, meter_provider = middleware_with_metrics
     Rack::MockRequest.new(mw).get('/ping')
 
-    streams = metric_streams(meter_provider)
-    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    dur_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION)
     attrs = dur_stream.instance_variable_get(:@data_points).keys.first
     refute attrs.key?('rails.controller'), 'rails.controller should be absent without Rails routing'
     refute attrs.key?('rails.action'),     'rails.action should be absent without Rails routing'
@@ -213,8 +208,7 @@ class MiddlewareTest < Minitest::Test
     mw, _exporter, meter_provider = middleware_with_metrics
     Rack::MockRequest.new(mw).get('/ping')
 
-    streams = metric_streams(meter_provider)
-    active_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_ACTIVE_REQUESTS }
+    active_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_ACTIVE_REQUESTS)
     refute_nil active_stream, 'http.server.active_requests stream not found'
 
     data_points = active_stream.instance_variable_get(:@data_points)
@@ -224,6 +218,10 @@ class MiddlewareTest < Minitest::Test
   end
 
   private
+
+  def find_metric_stream(meter_provider, name)
+    metric_streams(meter_provider).find { |s| s.instance_variable_get(:@name) == name }
+  end
 
   # Walk the MeterProvider's internal registry to collect all MetricStream objects.
   def metric_streams(meter_provider)
