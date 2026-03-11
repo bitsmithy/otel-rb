@@ -55,7 +55,6 @@ module Telemetry
   class << self
     include Metering
 
-    attr_accessor :replace_simple_formatter
     attr_reader :tracer
     # Returns the raw OpenTelemetry::Meter for this service.
     # Use this when you need instrument types not covered by the helper methods —
@@ -84,7 +83,7 @@ module Telemetry
 
       if defined?(Rails)
         wire_rails_middleware
-        wire_tracing_logger if config.integrate_tracing_logger
+        wire_tracing_logger if config.integrate_tracing_logger && !@test_mode
       end
 
       unless @test_mode
@@ -214,7 +213,6 @@ module Telemetry
       return if @test_mode
 
       @test_mode = true
-      @replace_simple_formatter = false
 
       %w[OTEL_TRACES_EXPORTER OTEL_METRICS_EXPORTER OTEL_LOGS_EXPORTER].each do |var|
         ENV[var] ||= 'none'
@@ -237,8 +235,6 @@ module Telemetry
     def wire_tracing_logger
       existing = Rails.logger.formatter
       if existing && !existing.is_a?(TraceFormatter)
-        return if skip_formatter_replacement?(existing)
-
         warn '[Telemetry] replacing existing logger formatter ' \
              "(#{existing.class}) with Telemetry::TraceFormatter"
       end
@@ -248,12 +244,6 @@ module Telemetry
         :@telemetry_bridge_logger,
         OpenTelemetry.logger_provider.logger(name: 'telemetry.bridge', version: VERSION)
       )
-    end
-
-    def skip_formatter_replacement?(formatter)
-      @test_mode && !@replace_simple_formatter &&
-        defined?(::ActiveSupport::Logger::SimpleFormatter) &&
-        formatter.instance_of?(::ActiveSupport::Logger::SimpleFormatter)
     end
   end
 end

@@ -323,23 +323,15 @@ Call `Telemetry.test_mode!` once in your test helper. It disables the `at_exit` 
 
 ```ruby
 # test/test_helper.rb
-ENV['OTEL_METRICS_EXPORTER'] ||= 'none'  # skip metric export in tests
-
 require 'opentelemetry/sdk'
 require 'telemetry'
 
 Telemetry.test_mode!
 ```
 
-`OTEL_METRICS_EXPORTER=none` tells the OTel metrics SDK to skip exporter configuration entirely, suppressing the connection-refused noise that would otherwise appear when there is no collector running locally.
+`test_mode!` sets `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, and `OTEL_LOGS_EXPORTER` to `none` (unless already set), suppressing connection-refused noise when no collector is running locally.
 
-When `RAILS_ENV=test`, `SimpleFormatter` is not replaced with `TraceFormatter` since Rails' test framework sets `SimpleFormatter` as the default before initializers run. If you want trace/span IDs in your test log output, opt in to the replacement in your test helper:
-
-```ruby
-# test/test_helper.rb
-
-Telemetry.replace_simple_formatter = true
-```
+In test mode, `integrate_tracing_logger: true` is ignored — `TraceFormatter` and `LogBridge` are not wired to `Rails.logger`. This avoids formatter conflicts and noisy warnings during tests.
 
 ## License
 

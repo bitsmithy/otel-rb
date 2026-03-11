@@ -109,18 +109,20 @@ class SetupTest < Minitest::Test
     rails_logger = fake_rails_logger(formatter: nil)
     rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
 
+    # Call wire_tracing_logger directly because setup skips it in test mode.
+    Telemetry.setup(service_name: 'test-service')
     with_fake_rails(logger: rails_logger) do
-      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+      Telemetry.send(:wire_tracing_logger)
     end
 
     assert_instance_of Telemetry::TraceFormatter, assigned_formatter
   end
 
-  # --- test_mode! formatter warning ---
+  # --- test_mode! skips tracing logger ---
 
-  def test_test_mode_skips_simple_formatter_replacement
+  def test_test_mode_skips_tracing_logger
     assigned_formatter = :not_called
-    rails_logger = fake_rails_logger(formatter: ActiveSupport::Logger::SimpleFormatter.new)
+    rails_logger = fake_rails_logger(formatter: ::Logger::Formatter.new)
     rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
 
     with_fake_rails(logger: rails_logger) do
@@ -128,33 +130,6 @@ class SetupTest < Minitest::Test
     end
 
     assert_equal :not_called, assigned_formatter
-  end
-
-  def test_test_mode_still_warns_and_replaces_non_simple_formatter
-    warnings = capture_warnings do
-      with_fake_rails(formatter: ::Logger::Formatter.new) do
-        Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
-      end
-    end
-
-    assert_equal 1, warnings.size
-    assert_match(/replacing existing logger formatter/, warnings.first)
-  end
-
-  def test_test_mode_replace_simple_formatter_opt_in
-    assigned_formatter = nil
-    rails_logger = fake_rails_logger(formatter: ActiveSupport::Logger::SimpleFormatter.new)
-    rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
-
-    Telemetry.replace_simple_formatter = true
-
-    with_fake_rails(logger: rails_logger) do
-      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
-    end
-
-    assert_instance_of Telemetry::TraceFormatter, assigned_formatter
-  ensure
-    Telemetry.replace_simple_formatter = false
   end
 
   # --- test_mode! auto-setup ---
@@ -215,8 +190,10 @@ class SetupTest < Minitest::Test
     require 'telemetry/log_bridge'
     rails_logger = ::Logger.new(StringIO.new)
 
+    # Call wire_tracing_logger directly because setup skips it in test mode.
+    Telemetry.setup(service_name: 'test-service')
     with_fake_rails(logger: rails_logger) do
-      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+      Telemetry.send(:wire_tracing_logger)
     end
 
     assert_includes rails_logger.singleton_class.ancestors, Telemetry::LogBridge
@@ -233,10 +210,9 @@ class SetupTest < Minitest::Test
     refute_includes rails_logger.singleton_class.ancestors, Telemetry::LogBridge
   end
 
-  def test_bridge_skipped_in_test_mode_with_simple_formatter
+  def test_bridge_skipped_in_test_mode
     require 'telemetry/log_bridge'
     rails_logger = ::Logger.new(StringIO.new)
-    rails_logger.formatter = ActiveSupport::Logger::SimpleFormatter.new
 
     with_fake_rails(logger: rails_logger) do
       Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
@@ -276,11 +252,5 @@ class SetupTest < Minitest::Test
         fake_rails.stub(:logger, rails_logger, &block)
       end
     end
-  end
-
-  def capture_warnings(&)
-    warnings = []
-    Telemetry.stub(:warn, ->(msg) { warnings << msg }, &)
-    warnings
   end
 end
