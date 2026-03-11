@@ -288,6 +288,14 @@ Telemetry.test_mode!
 
 `OTEL_METRICS_EXPORTER=none` tells the OTel metrics SDK to skip exporter configuration entirely, suppressing the connection-refused noise that would otherwise appear when there is no collector running locally.
 
+When `RAILS_ENV=test`, `SimpleFormatter` is not replaced with `TraceFormatter` since Rails' test framework sets `SimpleFormatter` as the default before initializers run. If you want trace/span IDs in your test log output, opt in to the replacement in your test helper:
+
+```ruby
+# test/test_helper.rb
+
+Telemetry.replace_simple_formatter = true
+```
+
 ## License
 
 MIT

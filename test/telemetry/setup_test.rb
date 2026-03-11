@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'test_helper'
+require 'active_support/logger'
 
 class SetupTest < Minitest::Test
   # --- Telemetry.setup (module-level) ---
@@ -93,30 +94,11 @@ class SetupTest < Minitest::Test
 
   def test_trace_formatter_not_assigned_by_default
     assigned_formatter = :not_called
-    middleware_stack = Object.new
-    middleware_stack.define_singleton_method(:use) { |*_args| nil }
-
-    app_config = Object.new
-    app_config.define_singleton_method(:middleware) { middleware_stack }
-    rails_app = Object.new
-    rails_app.define_singleton_method(:config) { app_config }
-
-    rails_logger = Object.new
-    rails_logger.define_singleton_method(:formatter)  { nil }
+    rails_logger = fake_rails_logger(formatter: nil)
     rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
 
-    fake_rails = Module.new do
-      def self.application; end
-
-      def self.logger; end
-    end
-
-    stub_const(:Rails, fake_rails) do
-      fake_rails.stub(:application, rails_app) do
-        fake_rails.stub(:logger, rails_logger) do
-          Telemetry.setup(service_name: 'test-service')
-        end
-      end
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service')
     end
 
     assert_equal :not_called, assigned_formatter
@@ -124,33 +106,55 @@ class SetupTest < Minitest::Test
 
   def test_trace_formatter_assigned_when_integrate_tracing_logger_true
     assigned_formatter = nil
-    middleware_stack = Object.new
-    middleware_stack.define_singleton_method(:use) { |*_args| nil }
-
-    app_config = Object.new
-    app_config.define_singleton_method(:middleware) { middleware_stack }
-    rails_app = Object.new
-    rails_app.define_singleton_method(:config) { app_config }
-
-    rails_logger = Object.new
-    rails_logger.define_singleton_method(:formatter)  { nil }
+    rails_logger = fake_rails_logger(formatter: nil)
     rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
 
-    fake_rails = Module.new do
-      def self.application; end
-
-      def self.logger; end
-    end
-
-    stub_const(:Rails, fake_rails) do
-      fake_rails.stub(:application, rails_app) do
-        fake_rails.stub(:logger, rails_logger) do
-          Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
-        end
-      end
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
     end
 
     assert_instance_of Telemetry::TraceFormatter, assigned_formatter
+  end
+
+  # --- test_mode! formatter warning ---
+
+  def test_test_mode_skips_simple_formatter_replacement
+    assigned_formatter = :not_called
+    rails_logger = fake_rails_logger(formatter: ActiveSupport::Logger::SimpleFormatter.new)
+    rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
+
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+    end
+
+    assert_equal :not_called, assigned_formatter
+  end
+
+  def test_test_mode_still_warns_and_replaces_non_simple_formatter
+    warnings = capture_warnings do
+      with_fake_rails(formatter: ::Logger::Formatter.new) do
+        Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+      end
+    end
+
+    assert_equal 1, warnings.size
+    assert_match(/replacing existing logger formatter/, warnings.first)
+  end
+
+  def test_test_mode_replace_simple_formatter_opt_in
+    assigned_formatter = nil
+    rails_logger = fake_rails_logger(formatter: ActiveSupport::Logger::SimpleFormatter.new)
+    rails_logger.define_singleton_method(:formatter=) { |f| assigned_formatter = f }
+
+    Telemetry.replace_simple_formatter = true
+
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.setup(service_name: 'test-service', integrate_tracing_logger: true)
+    end
+
+    assert_instance_of Telemetry::TraceFormatter, assigned_formatter
+  ensure
+    Telemetry.replace_simple_formatter = false
   end
 
   # --- test_mode! auto-setup ---
@@ -178,5 +182,44 @@ class SetupTest < Minitest::Test
     result = Telemetry::Setup.call(config)
     assert_respond_to result[:tracer], :in_span
     assert_kind_of Proc, result[:shutdown]
+  end
+
+  private
+
+  def fake_rails_logger(formatter:)
+    logger = Object.new
+    logger.define_singleton_method(:formatter)  { formatter }
+    logger.define_singleton_method(:formatter=) { |_f| nil }
+    logger
+  end
+
+  def with_fake_rails(formatter: nil, logger: nil, &block)
+    middleware_stack = Object.new
+    middleware_stack.define_singleton_method(:use) { |*_args| nil }
+
+    app_config = Object.new
+    app_config.define_singleton_method(:middleware) { middleware_stack }
+    rails_app = Object.new
+    rails_app.define_singleton_method(:config) { app_config }
+
+    rails_logger = logger || fake_rails_logger(formatter: formatter)
+
+    fake_rails = Module.new do
+      def self.application; end
+
+      def self.logger; end
+    end
+
+    stub_const(:Rails, fake_rails) do
+      fake_rails.stub(:application, rails_app) do
+        fake_rails.stub(:logger, rails_logger, &block)
+      end
+    end
+  end
+
+  def capture_warnings(&)
+    warnings = []
+    Telemetry.stub(:warn, ->(msg) { warnings << msg }, &)
+    warnings
   end
 end

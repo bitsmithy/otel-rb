@@ -38,6 +38,7 @@ Gem::Specification.new do |spec|
   # Semantic conventions
   spec.add_dependency 'opentelemetry-semantic_conventions', '~> 1.0'
 
+  spec.add_development_dependency 'activesupport',      '~> 8.0'
   spec.add_development_dependency 'bundler-audit',      '~> 0.9'
   spec.add_development_dependency 'minitest',           '~> 6.0'
   spec.add_development_dependency 'minitest-mock',      '~> 5.0'
