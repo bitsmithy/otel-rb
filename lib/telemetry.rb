@@ -40,7 +40,7 @@ require 'telemetry/metering'
 #   Telemetry.counter("orders.placed", 1, "payment.method" => "card")
 #
 # @example Metrics — time a block
-#   Telemetry.histogram("orders.charge_duration", unit: "s") { charge(order) }
+#   Telemetry.histogram("orders.charge_duration", unit: "ms") { charge(order) }
 #
 # @example Logging
 #   Telemetry.log(:info, "Order placed")
@@ -118,7 +118,7 @@ module Telemetry
     #   @param value [Numeric]
     #   @param attrs [Hash]
     # @overload histogram(name, attrs = {}) { block }
-    #   Times the block, records duration in seconds, returns block value.
+    #   Times the block, records duration in the histogram's unit, returns block value.
     #   @param attrs [Hash]
     #   @yieldreturn block's return value (passed through)
     def histogram(name, *rest, **kwargs, &block)
@@ -162,15 +162,15 @@ module Telemetry
       dispatch(:up_down_counter, name, value, attrs, { unit: unit, description: description })
     end
 
-    # Times a block and records wall-clock duration (seconds) as a histogram.
+    # Times a block and records wall-clock duration (milliseconds) as a histogram.
     # Shorthand for: Telemetry.histogram(name, attrs) { block }
-    # Always uses unit: "s".
+    # Always uses unit: "ms".
     #
     # @param name [String] histogram instrument name
     # @param attrs [Hash] metric attributes
     # @yieldreturn the block's return value (passed through)
     def time(name, attrs = {}, &)
-      histogram(name, attrs, unit: 's', &)
+      histogram(name, attrs, unit: 'ms', &)
     end
 
     # Wraps a block in an OTel span. Nested calls automatically create child

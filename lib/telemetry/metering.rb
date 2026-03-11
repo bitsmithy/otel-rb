@@ -50,7 +50,12 @@ module Telemetry
 
     def build_instrument(type, name, opts)
       factory_method, wrapper_class = INSTRUMENT_TYPES.fetch(type)
-      wrapper_class.new(@meter.public_send(factory_method, name, **opts))
+      otel_instrument = @meter.public_send(factory_method, name, **opts)
+      if wrapper_class == Instruments::Histogram
+        wrapper_class.new(otel_instrument, unit: opts[:unit])
+      else
+        wrapper_class.new(otel_instrument)
+      end
     end
   end
 end

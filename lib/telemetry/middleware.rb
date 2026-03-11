@@ -45,7 +45,7 @@ module Telemetry
     def call_inner(env)
       start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       status, headers, body = @app.call(env)
-      duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
+      duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start) * 1000
       [status, headers, body, duration]
     end
 
@@ -80,7 +80,7 @@ module Telemetry
         @request_count    = meter.create_counter(HTTP_SERVER_REQUEST_COUNT,
                                                  unit: '{request}', description: 'Total HTTP server requests')
         @request_duration = meter.create_histogram(HTTP_SERVER_REQUEST_DURATION,
-                                                   unit: 's', description: 'HTTP server request duration')
+                                                   unit: 'ms', description: 'HTTP server request duration')
         @active_requests  = meter.create_up_down_counter(HTTP_SERVER_ACTIVE_REQUESTS,
                                                          unit: '{request}', description: 'Active HTTP server requests')
       end

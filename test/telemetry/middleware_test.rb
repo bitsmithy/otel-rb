@@ -167,6 +167,21 @@ class MiddlewareTest < Minitest::Test
     assert_equal 'GET', attrs['http.request.method']
   end
 
+  def test_request_duration_recorded_in_milliseconds
+    inner = lambda { |_env|
+      sleep 0.05
+      [200, {}, ['OK']]
+    }
+    mw, _exporter, meter_provider = middleware_with_metrics(inner)
+    Rack::MockRequest.new(mw).get('/ping')
+
+    streams = metric_streams(meter_provider)
+    dur_stream = streams.find { |s| s.instance_variable_get(:@name) == Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION }
+    data_point = dur_stream.instance_variable_get(:@data_points).values.first
+
+    assert_in_delta 50, data_point.sum, 25
+  end
+
   def test_controller_and_action_attributes_on_rails_request
     inner = lambda { |env|
       env[Telemetry::Middleware::PATH_PARAMETERS_KEY] = { controller: 'users', action: 'show' }

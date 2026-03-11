@@ -109,7 +109,7 @@ With `integrate_tracing_logger: true`, setup also:
 | Instrument | Type | Unit | Attributes |
 |-----------|------|------|-----------|
 | `http.server.request.count` | counter | `{request}` | `http.request.method`, `http.route`, `http.response.status_code`, `rails.controller`*, `rails.action`* |
-| `http.server.request.duration` | histogram | `s` | same as above |
+| `http.server.request.duration` | histogram | `ms` | same as above |
 | `http.server.active_requests` | up-down counter | `{request}` | `http.request.method` |
 
 \* `rails.controller` and `rails.action` are set from `action_dispatch.request.path_parameters` and are omitted when the middleware is used outside Rails.
@@ -164,7 +164,7 @@ Each instrument type has a single method that works in two forms:
 |------|-----------|--------|
 | Handle | `(name)` or `(name, unit: "s", description: "...")` | Returns a cached instrument object for repeated use |
 | Fire-and-forget | `(name, value)` or `(name, value, attrs_hash, unit: "s", description: "...")` | Records the value immediately, returns nil |
-| Block *(histogram only)* | `(name, unit: "s") { block }` or `(name, attrs_hash, unit: "s") { block }` | Times the block, records duration in seconds, returns block value |
+| Block *(histogram only)* | `(name, unit: "ms") { block }` or `(name, attrs_hash, unit: "ms") { block }` | Times the block, records duration in milliseconds, returns block value |
 
 `unit:` and `description:` are always keyword arguments and can be added to either form. The numeric value, when present, is always the second positional argument. The attributes hash, when present, is always the third positional argument — never a keyword. This is why the hash position shifts between the two forms: the handle form has no value, so attributes have nowhere to go as positional args — pass them when you call the method on the handle instead.
 
@@ -196,21 +196,21 @@ Distribution of values over time. Use for durations, payload sizes, latencies �
 
 ```ruby
 # Handle form
-durations = Telemetry.histogram("orders.duration", unit: "s")
-durations.record(0.42)
-durations.record(0.42, "queue" => "default")  # with attributes
-durations.time { charge(order) }              # times block, records seconds
+durations = Telemetry.histogram("orders.duration", unit: "ms")
+durations.record(42.0)
+durations.record(42.0, "queue" => "default")  # with attributes
+durations.time { charge(order) }              # times block, records ms
 durations.time("queue" => "default") { charge(order) }  # timed with attributes
 
 # Fire-and-forget — record a value immediately
-Telemetry.histogram("orders.duration", 0.42, unit: "s", description: "Order processing time")
-Telemetry.histogram("orders.duration", 0.42, "queue" => "default", unit: "s", description: "Order processing time")
+Telemetry.histogram("orders.duration", 42.0, unit: "ms", description: "Order processing time")
+Telemetry.histogram("orders.duration", 42.0, "queue" => "default", unit: "ms", description: "Order processing time")
 
-# Fire-and-forget — block form, unit: "s" must be set explicitly
-Telemetry.histogram("orders.charge_duration", unit: "s") { charge(order) }
-Telemetry.histogram("orders.charge_duration", "queue" => "default", unit: "s") { charge(order) }
+# Fire-and-forget — block form, unit: "ms" must be set explicitly
+Telemetry.histogram("orders.charge_duration", unit: "ms") { charge(order) }
+Telemetry.histogram("orders.charge_duration", "queue" => "default", unit: "ms") { charge(order) }
 
-# Timed shorthand — unit: "s" set automatically
+# Timed shorthand — unit: "ms" set automatically
 result = Telemetry.time("orders.charge_duration") { charge(order) }
 result = Telemetry.time("orders.charge_duration", "queue" => "default") { charge(order) }
 

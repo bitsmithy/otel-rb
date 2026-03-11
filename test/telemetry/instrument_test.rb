@@ -233,10 +233,70 @@ class InstrumentTest < Minitest::Test
     assert_silent { Telemetry.up_down_counter('test.conns6').decrement(1, 'pool' => 'primary') }
   end
 
+  # --- Histogram#time unit conversion ---
+
+  def test_histogram_time_defaults_to_ms
+    recorded = histogram_time_recorded(unit: nil)
+    assert_in_delta 100, recorded, 50
+  end
+
+  def test_histogram_time_converts_to_hours
+    recorded = histogram_time_recorded(unit: 'h')
+    assert_in_delta 0.1 / 3600, recorded, 0.001
+  end
+
+  def test_histogram_time_converts_to_minutes
+    recorded = histogram_time_recorded(unit: 'min')
+    assert_in_delta 0.1 / 60, recorded, 0.001
+  end
+
+  def test_histogram_time_converts_to_seconds
+    recorded = histogram_time_recorded(unit: 's')
+    assert_in_delta 0.1, recorded, 0.05
+  end
+
+  def test_histogram_time_converts_to_milliseconds
+    recorded = histogram_time_recorded(unit: 'ms')
+    assert_in_delta 100, recorded, 50
+  end
+
+  def test_histogram_time_converts_to_microseconds
+    recorded = histogram_time_recorded(unit: 'us')
+    assert_in_delta 100_000, recorded, 50_000
+  end
+
+  def test_histogram_time_converts_to_nanoseconds
+    recorded = histogram_time_recorded(unit: 'ns')
+    assert_in_delta 100_000_000, recorded, 50_000_000
+  end
+
+  def test_histogram_time_raises_for_non_time_unit
+    h = Telemetry.histogram('time.bad_unit', unit: 'By')
+    error = assert_raises(ArgumentError) { h.time { 'work' } }
+    assert_match(/cannot time with unit/, error.message)
+  end
+
   # --- NotSetupError ---
 
   def test_not_setup_error
     Telemetry.reset!
     assert_raises(Telemetry::NotSetupError) { Telemetry.counter('x') }
+  end
+
+  SpyInstrument = Struct.new(:last_value) do
+    def record(value, **)
+      self.last_value = value
+    end
+  end
+
+  private
+
+  # Creates a histogram with the given unit, times a ~100ms sleep, and returns
+  # the recorded value by spying on the underlying OTel instrument.
+  def histogram_time_recorded(unit:)
+    spy = SpyInstrument.new
+    h = Telemetry::Instruments::Histogram.new(spy, unit: unit)
+    h.time { sleep 0.1 }
+    spy.last_value
   end
 end

@@ -32,6 +32,18 @@ module Telemetry
     # Use for durations, payload sizes, latencies — anything where you care
     # about percentiles, not just the sum.
     class Histogram < Base
+      ELAPSED_MULTIPLIER = {
+        'h' => 1.0 / 3600, 'min' => 1.0 / 60, 's' => 1,
+        'ms' => 1_000, 'us' => 1_000_000, 'ns' => 1_000_000_000
+      }.freeze
+
+      # @param instrument [OpenTelemetry::Metrics::Histogram] underlying OTel instrument
+      # @param unit [String, nil] time unit for `.time` conversion (default "ms")
+      def initialize(instrument, unit: nil)
+        super(instrument)
+        @unit = unit
+      end
+
       # @param value [Numeric] observed value
       # @param attrs [Hash] metric attributes
       def record(value, attrs = {})
@@ -40,15 +52,20 @@ module Telemetry
 
       alias record_value record
 
-      # Times the given block and records its wall-clock duration in seconds.
+      # Times the given block and records wall-clock duration in the histogram's unit.
       # Returns the block's own return value.
       #
       # @param attrs [Hash] metric attributes
       # @yieldreturn the block's return value (passed through unchanged)
       def time(attrs = {})
+        multiplier = ELAPSED_MULTIPLIER.fetch(@unit || 'ms') do
+          raise ArgumentError,
+                "cannot time with unit #{@unit.inspect} — use one of: #{ELAPSED_MULTIPLIER.keys.join(', ')}"
+        end
         start  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         result = yield
-        record(Process.clock_gettime(Process::CLOCK_MONOTONIC) - start, attrs)
+        elapsed = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start) * multiplier
+        record(elapsed, attrs)
         result
       end
     end
