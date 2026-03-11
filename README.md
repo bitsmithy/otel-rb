@@ -48,6 +48,23 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20your-token,X-Org-Id=12
 
 You can also set signal-specific headers (e.g., `OTEL_EXPORTER_OTLP_TRACES_HEADERS`) if different signals need different credentials.
 
+### Export interval
+
+Each signal batches data and flushes on a timer. The intervals are controlled by standard OTel environment variables:
+
+| Signal | Env var | Default | Description |
+|--------|---------|---------|-------------|
+| Traces | `OTEL_BSP_SCHEDULE_DELAY` | `5000` | BatchSpanProcessor flush interval (ms) |
+| Metrics | `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | PeriodicMetricReader export interval (ms) |
+| Logs | `OTEL_BLRP_SCHEDULE_DELAY` | `5000` | BatchLogRecordProcessor flush interval (ms) |
+
+```bash
+# Export metrics every 10 seconds instead of the default 60
+export OTEL_METRIC_EXPORT_INTERVAL=10000
+```
+
+No code changes needed — the underlying OTel SDK reads these env vars when the processors are created.
+
 ## Setup
 
 ### Rails
