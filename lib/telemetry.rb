@@ -235,8 +235,6 @@ module Telemetry
     def wire_tracing_logger
       existing = Rails.logger.formatter
       if existing && !existing.is_a?(TraceFormatter)
-        return if skip_formatter_replacement?(existing)
-
         warn '[Telemetry] replacing existing logger formatter ' \
              "(#{existing.class}) with Telemetry::TraceFormatter"
       end

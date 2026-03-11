@@ -199,6 +199,25 @@ class SetupTest < Minitest::Test
     assert_includes rails_logger.singleton_class.ancestors, Telemetry::LogBridge
   end
 
+  def test_wire_tracing_logger_with_broadcast_logger
+    require 'active_support'
+    require 'active_support/broadcast_logger'
+    require 'telemetry/log_bridge'
+
+    inner = ::Logger.new(StringIO.new)
+    broadcast = ActiveSupport::BroadcastLogger.new(inner)
+    # Rails sets a formatter in production; we need one here so the
+    # wire_tracing_logger code path that replaces the formatter is exercised.
+    broadcast.formatter = ::Logger::Formatter.new
+
+    Telemetry.setup(service_name: 'test-service')
+    with_fake_rails(logger: broadcast) do
+      Telemetry.send(:wire_tracing_logger)
+    end
+
+    assert_includes inner.singleton_class.ancestors, Telemetry::LogBridge
+  end
+
   def test_bridge_not_installed_by_default
     require 'telemetry/log_bridge'
     rails_logger = ::Logger.new(StringIO.new)
