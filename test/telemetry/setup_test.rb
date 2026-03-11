@@ -175,6 +175,31 @@ class SetupTest < Minitest::Test
     end
   end
 
+  # --- OTLP headers from env ---
+
+  def test_exporter_picks_up_otlp_headers_from_env
+    ENV['OTEL_EXPORTER_OTLP_HEADERS'] = 'Authorization=Bearer%20test-token,X-Org-Id=42'
+
+    exporter = OpenTelemetry::Exporter::OTLP::Exporter.new
+    headers = exporter.instance_variable_get(:@headers)
+
+    assert_equal 'Bearer test-token', headers['Authorization']
+    assert_equal '42', headers['X-Org-Id']
+  ensure
+    ENV.delete('OTEL_EXPORTER_OTLP_HEADERS')
+  end
+
+  def test_exporter_picks_up_headers_even_with_explicit_endpoint
+    ENV['OTEL_EXPORTER_OTLP_HEADERS'] = 'Authorization=Bearer%20test-token'
+
+    exporter = OpenTelemetry::Exporter::OTLP::Exporter.new(endpoint: 'http://localhost:4318')
+    headers = exporter.instance_variable_get(:@headers)
+
+    assert_equal 'Bearer test-token', headers['Authorization']
+  ensure
+    ENV.delete('OTEL_EXPORTER_OTLP_HEADERS')
+  end
+
   # --- Telemetry::Setup internal contract ---
 
   def test_setup_module_returns_tracer_and_shutdown

@@ -32,6 +32,22 @@ All options are optional. Pass them as keywords to `Telemetry.setup`:
 | `endpoint` | `nil` | OTLP endpoint URL; nil uses `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | `integrate_tracing_logger` | `false` | When `true`, replaces `Rails.logger.formatter` with `TraceFormatter` and forwards all `Rails.logger` calls to OTel as log records |
 
+### Authentication
+
+If your OTLP endpoint requires authentication, set the standard `OTEL_EXPORTER_OTLP_HEADERS` environment variable. The underlying OpenTelemetry SDK reads it automatically and attaches the headers to every OTLP request (traces, metrics, and logs):
+
+```bash
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20your-token"
+```
+
+Multiple headers are comma-separated, with values URL-encoded:
+
+```bash
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20your-token,X-Org-Id=12345"
+```
+
+You can also set signal-specific headers (e.g., `OTEL_EXPORTER_OTLP_TRACES_HEADERS`) if different signals need different credentials.
+
 ## Setup
 
 ### Rails
