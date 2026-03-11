@@ -13,6 +13,10 @@ module Telemetry
     ROUTE_PATTERN_KEY      = 'action_dispatch.route_uri_pattern'
     # Set by Rails router after routing — contains :controller and :action keys
     PATH_PARAMETERS_KEY    = 'action_dispatch.request.path_parameters'
+    # Set by ActionDispatch::RequestId middleware
+    REQUEST_ID_KEY         = 'action_dispatch.request_id'
+    # Thread-local key for the current request ID, read by LogBridge
+    THREAD_REQUEST_ID_KEY  = :telemetry_request_id
 
     def initialize(app)
       @app = app
@@ -32,10 +36,13 @@ module Telemetry
           status, headers, body, duration = call_inner(env)
           route = env[ROUTE_PATTERN_KEY] || request.path
 
+          Thread.current[THREAD_REQUEST_ID_KEY] = env[REQUEST_ID_KEY]
           annotate_span(span, request, route, status)
           record_metrics(request, route, status, duration, env)
 
           [status, headers, body]
+        ensure
+          Thread.current[THREAD_REQUEST_ID_KEY] = nil
         end
       end
     end

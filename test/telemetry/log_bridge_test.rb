@@ -20,6 +20,7 @@ class LogBridgeTest < Minitest::Test
     assert_equal 9, emissions.first[:severity_number]
     assert_equal 'INFO', emissions.first[:severity_text]
     assert_equal 'hello', emissions.first[:body]
+    assert_equal 'info', emissions.first[:attributes]['level']
   end
 
   def test_bridge_maps_all_severity_levels
@@ -82,6 +83,47 @@ class LogBridgeTest < Minitest::Test
     logger.info('skipped')
 
     assert_empty emissions
+  end
+
+  # --- Request ID ---
+
+  def test_bridge_includes_request_id_when_set
+    logger, emissions = bridged_logger
+
+    Thread.current[Telemetry::Middleware::THREAD_REQUEST_ID_KEY] = 'abc-123'
+    logger.info('with request id')
+    Thread.current[Telemetry::Middleware::THREAD_REQUEST_ID_KEY] = nil
+
+    assert_equal 1, emissions.size
+    assert_equal 'abc-123', emissions.first[:attributes]['request.id']
+  end
+
+  def test_bridge_omits_request_id_when_not_set
+    logger, emissions = bridged_logger
+    logger.info('no request id')
+
+    assert_equal 1, emissions.size
+    refute emissions.first[:attributes].key?('request.id')
+  end
+
+  # --- BroadcastLogger compatibility ---
+
+  def test_bridge_emits_through_broadcast_logger
+    require 'active_support'
+    require 'active_support/broadcast_logger'
+
+    emissions = []
+    inner = ::Logger.new(StringIO.new)
+    broadcast = ActiveSupport::BroadcastLogger.new(inner)
+
+    Telemetry.send(:prepend_log_bridge, broadcast)
+    inject_mock_otel_logger(inner, emissions)
+
+    broadcast.info('broadcast hello')
+
+    assert_equal 1, emissions.size
+    assert_equal 9, emissions.first[:severity_number]
+    assert_equal 'broadcast hello', emissions.first[:body]
   end
 
   # --- Original output preserved ---

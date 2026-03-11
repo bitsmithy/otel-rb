@@ -235,15 +235,21 @@ module Telemetry
     def wire_tracing_logger
       existing = Rails.logger.formatter
       if existing && !existing.is_a?(TraceFormatter)
+        return if skip_formatter_replacement?(existing)
+
         warn '[Telemetry] replacing existing logger formatter ' \
              "(#{existing.class}) with Telemetry::TraceFormatter"
       end
       Rails.logger.formatter = TraceFormatter.new
-      Rails.logger.singleton_class.prepend(LogBridge)
-      Rails.logger.instance_variable_set(
-        :@telemetry_bridge_logger,
-        OpenTelemetry.logger_provider.logger(name: 'telemetry.bridge', version: VERSION)
-      )
+      prepend_log_bridge(Rails.logger)
+    end
+
+    def prepend_log_bridge(logger)
+      if logger.respond_to?(:broadcasts)
+        logger.broadcasts.each { |inner| prepend_log_bridge(inner) }
+      else
+        logger.singleton_class.prepend(LogBridge)
+      end
     end
   end
 end

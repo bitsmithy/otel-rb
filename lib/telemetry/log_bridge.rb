@@ -51,10 +51,15 @@ module Telemetry
         name: 'telemetry.bridge', version: Telemetry::VERSION
       )
 
+      attrs = { 'level' => otel_severity[1].downcase }
+      request_id = Thread.current[Middleware::THREAD_REQUEST_ID_KEY]
+      attrs['request.id'] = request_id if request_id
+
       @telemetry_bridge_logger.on_emit(
         severity_number: otel_severity[0],
         severity_text: otel_severity[1],
         body: message.to_s,
+        attributes: attrs,
         trace_id: span_context.valid? ? span_context.trace_id : nil,
         span_id: span_context.valid? ? span_context.span_id : nil,
         trace_flags: span_context.valid? ? span_context.trace_flags : nil,
