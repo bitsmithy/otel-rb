@@ -89,6 +89,19 @@ class SetupTest < Minitest::Test
     assert_instance_of Telemetry::TraceFormatter, assigned_formatter
   end
 
+  def test_trace_formatter_can_be_installed_without_log_export
+    require 'telemetry/log_bridge'
+    rails_logger = ::Logger.new(StringIO.new)
+
+    Telemetry.setup(service_name: 'test-service')
+    with_fake_rails(logger: rails_logger) do
+      Telemetry.send(:wire_trace_formatter)
+    end
+
+    assert_equal [Telemetry::TraceFormatter, false],
+                 [rails_logger.formatter.class, rails_logger.singleton_class.ancestors.include?(Telemetry::LogBridge)]
+  end
+
   # --- test_mode! skips tracing logger ---
 
   def test_test_mode_skips_tracing_logger
@@ -164,6 +177,27 @@ class SetupTest < Minitest::Test
     assert_kind_of Proc, result[:shutdown]
   end
 
+  def test_setup_without_an_endpoint_does_not_create_exporters
+    without_exporter_environment do
+      constructor = ->(**) { raise 'exporter should not be created' }
+      OpenTelemetry::Exporter::OTLP::Exporter.stub(:new, constructor) do
+        assert_silent { Telemetry::Setup.call(Telemetry::Config.new(service_name: 'test-service')) }
+      end
+    end
+  end
+
+  def test_setup_uses_the_standard_trace_sampler_environment
+    previous = ENV.fetch('OTEL_TRACES_SAMPLER', nil)
+    ENV['OTEL_TRACES_SAMPLER'] = 'always_off'
+    tracer = Telemetry::Setup.call(Telemetry::Config.new(service_name: 'test-service')).fetch(:tracer)
+    recording = nil
+    tracer.in_span('not-sampled') { |span| recording = span.recording? }
+
+    assert_equal false, recording
+  ensure
+    previous ? ENV['OTEL_TRACES_SAMPLER'] = previous : ENV.delete('OTEL_TRACES_SAMPLER')
+  end
+
   # --- LogBridge installation ---
 
   def test_bridge_installed_when_integrate_tracing_logger_true
@@ -221,6 +255,22 @@ class SetupTest < Minitest::Test
   end
 
   private
+
+  def without_exporter_environment
+    names = %w[
+      OTEL_EXPORTER_OTLP_ENDPOINT
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+      OTEL_TRACES_EXPORTER
+      OTEL_METRICS_EXPORTER
+      OTEL_LOGS_EXPORTER
+    ]
+    previous = names.to_h { |name| [name, ENV.delete(name)] }
+    yield
+  ensure
+    previous.each { |name, value| value ? ENV[name] = value : ENV.delete(name) }
+  end
 
   def fake_rails_logger(formatter:)
     logger = Object.new

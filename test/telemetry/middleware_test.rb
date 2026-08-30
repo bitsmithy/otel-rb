@@ -149,7 +149,7 @@ class MiddlewareTest < Minitest::Test
     attrs = data_points.keys.first
     assert_equal 'GET', attrs['http.request.method']
     assert_equal '/ping', attrs['http.route']
-    assert_equal '200', attrs['http.response.status_code']
+    assert_equal 200, attrs['http.response.status_code']
   end
 
   def test_request_duration_metric_recorded
@@ -165,7 +165,7 @@ class MiddlewareTest < Minitest::Test
     assert_equal 'GET', attrs['http.request.method']
   end
 
-  def test_request_duration_recorded_in_milliseconds
+  def test_request_duration_recorded_in_seconds
     inner = lambda { |_env|
       sleep 0.05
       [200, {}, ['OK']]
@@ -176,7 +176,7 @@ class MiddlewareTest < Minitest::Test
     dur_stream = find_metric_stream(meter_provider, Telemetry::Middleware::HTTP_SERVER_REQUEST_DURATION)
     data_point = dur_stream.instance_variable_get(:@data_points).values.first
 
-    assert_in_delta 50, data_point.sum, 25
+    assert_in_delta 0.05, data_point.sum, 0.025
   end
 
   def test_controller_and_action_attributes_on_rails_request

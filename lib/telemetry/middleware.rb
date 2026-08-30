@@ -52,7 +52,7 @@ module Telemetry
     def call_inner(env)
       start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       status, headers, body = @app.call(env)
-      duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start) * 1000
+      duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
       [status, headers, body, duration]
     end
 
@@ -71,7 +71,7 @@ module Telemetry
       metric_attrs = {
         'http.request.method' => request.request_method,
         'http.route' => route,
-        'http.response.status_code' => status.to_s,
+        'http.response.status_code' => status,
         'rails.controller' => path_params&.fetch(:controller, nil),
         'rails.action' => path_params&.fetch(:action, nil)
       }.compact
@@ -87,7 +87,7 @@ module Telemetry
         @request_count    = meter.create_counter(HTTP_SERVER_REQUEST_COUNT,
                                                  unit: '{request}', description: 'Total HTTP server requests')
         @request_duration = meter.create_histogram(HTTP_SERVER_REQUEST_DURATION,
-                                                   unit: 'ms', description: 'HTTP server request duration')
+                                                   unit: 's', description: 'HTTP server request duration')
         @active_requests  = meter.create_up_down_counter(HTTP_SERVER_ACTIVE_REQUESTS,
                                                          unit: '{request}', description: 'Active HTTP server requests')
       end

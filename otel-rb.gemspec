@@ -38,6 +38,8 @@ Gem::Specification.new do |spec|
   # Semantic conventions
   spec.add_dependency 'opentelemetry-semantic_conventions', '~> 1.0'
 
+  spec.add_development_dependency 'activejob',          '~> 8.0'
+  spec.add_development_dependency 'activerecord',       '~> 8.0'
   spec.add_development_dependency 'activesupport',      '~> 8.0'
   spec.add_development_dependency 'bundler-audit',      '~> 0.9'
   spec.add_development_dependency 'minitest',           '~> 6.0'
@@ -45,5 +47,6 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rack',               '~> 3.0'
   spec.add_development_dependency 'rack-test',          '~> 2.0'
   spec.add_development_dependency 'rubocop',            '~> 1.65'
+  spec.add_development_dependency 'sqlite3', '~> 2.0'
   spec.metadata['rubygems_mfa_required'] = 'true'
 end

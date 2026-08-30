@@ -1,9 +1,20 @@
 # frozen_string_literal: true
 
 require 'telemetry/version'
+require 'telemetry/conventions'
+require 'telemetry/errors'
 require 'telemetry/config'
 require 'telemetry/setup'
 require 'telemetry/middleware'
+require 'telemetry/controller_instrumentation'
+require 'telemetry/database_operation'
+require 'telemetry/active_record_instrumentation'
+require 'telemetry/active_job_context'
+require 'telemetry/active_job_instrumentation'
+require 'telemetry/product_action_catalog'
+require 'telemetry/product_actions'
+require 'telemetry/product_action_api'
+require 'telemetry/logging_api'
 require 'telemetry/trace_formatter'
 require 'telemetry/log_bridge'
 require 'telemetry/logger'
@@ -45,15 +56,10 @@ require 'telemetry/metering'
 # @example Logging
 #   Telemetry.log(:info, "Order placed")
 module Telemetry
-  # Raised when tracing, metering, or logging is attempted before Telemetry.setup.
-  class NotSetupError < StandardError
-    def initialize(method_name)
-      super("Telemetry.#{method_name} called before Telemetry.setup — call Telemetry.setup first")
-    end
-  end
-
   class << self
     include Metering
+    include ProductActionAPI
+    include LoggingAPI
 
     attr_reader :tracer
     # Returns the raw OpenTelemetry::Meter for this service.
@@ -78,12 +84,16 @@ module Telemetry
       result  = Setup.call(config)
       @tracer      = result[:tracer]
       @meter       = result[:meter]
-      @logger      = Logger.new
-      @instruments = nil
+      @logger          = Logger.new
+      @instruments     = nil
+      @product_actions = nil
 
       if defined?(Rails)
         wire_rails_middleware
-        wire_tracing_logger if config.integrate_tracing_logger && !@test_mode
+        ControllerInstrumentation.install
+        ActiveRecordInstrumentation.install if defined?(ActiveRecord)
+        ActiveJobInstrumentation.install if defined?(ActiveJob)
+        wire_rails_logging(config) unless @test_mode
       end
 
       unless @test_mode
@@ -160,23 +170,6 @@ module Telemetry
       @tracer.in_span(name, attributes: attrs, &)
     end
 
-    # Delegates to Telemetry.logger.<level>.
-    #
-    # @param level [Symbol] :debug, :info, :warn, :error, or :fatal
-    # @param message [String]
-    # @param kwargs [Hash] forwarded to the logger (e.g. rails_logger: false)
-    def log(level, message, **)
-      logger.public_send(level, message, **)
-    end
-
-    # OTel log emitter.
-    # @return [Telemetry::Logger]
-    def logger
-      raise NotSetupError, :logger unless @logger
-
-      @logger
-    end
-
     # Enables test mode for the entire process:
     #   1. Suppresses at_exit registration.
     #   2. Suppresses OTLP exporters via OTEL_*_EXPORTER env vars.
@@ -196,8 +189,10 @@ module Telemetry
       define_singleton_method(:reset!) do
         @tracer      = nil
         @meter       = nil
-        @logger      = nil
-        @instruments = nil
+        @logger                 = nil
+        @instruments            = nil
+        @product_actions        = nil
+        @product_action_catalog = nil
       end
     end
 
@@ -207,14 +202,26 @@ module Telemetry
       Rails.application.config.middleware.use(Middleware)
     end
 
+    def wire_rails_logging(config)
+      if config.integrate_tracing_logger
+        wire_tracing_logger
+      elsif config.correlate_logs
+        wire_trace_formatter
+      end
+    end
+
     def wire_tracing_logger
+      wire_trace_formatter
+      prepend_log_bridge(Rails.logger)
+    end
+
+    def wire_trace_formatter
       existing = Rails.logger.formatter
       if existing && !existing.is_a?(TraceFormatter)
         warn '[Telemetry] replacing existing logger formatter ' \
              "(#{existing.class}) with Telemetry::TraceFormatter"
       end
       Rails.logger.formatter = TraceFormatter.new
-      prepend_log_bridge(Rails.logger)
     end
 
     def prepend_log_bridge(logger)

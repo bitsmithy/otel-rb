@@ -29,8 +29,11 @@ All options are optional. Pass them as keywords to `Telemetry.setup`:
 | `service_name` | `File.basename($PROGRAM_NAME, ".*")` | Reported service name |
 | `service_namespace` | Parent directory name | Reported service namespace |
 | `service_version` | `ENV["SERVICE_VERSION"]` or `"unknown"` | Reported service version |
-| `endpoint` | `nil` | OTLP endpoint URL; nil uses `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| `integrate_tracing_logger` | `false` | When `true`, replaces `Rails.logger.formatter` with `TraceFormatter` and forwards all `Rails.logger` calls to OTel as log records |
+| `deployment_environment` | `nil` | Reported `deployment.environment.name` resource attribute |
+| `endpoint` | `nil` | OTLP endpoint URL; nil uses configured standard signal or shared `OTEL_EXPORTER_OTLP_*_ENDPOINT` values |
+| `require_endpoint` | `false` | Reject setup when neither `endpoint` nor `OTEL_EXPORTER_OTLP_ENDPOINT` is configured |
+| `correlate_logs` | `false` | When `true`, adds active trace and span IDs to normal Rails log output without exporting every Rails log record |
+| `integrate_tracing_logger` | `false` | When `true`, correlates normal Rails output and also forwards every `Rails.logger` call to OTel as a log record |
 
 ### Authentication
 
@@ -76,19 +79,23 @@ Telemetry.setup(
   service_name:             Rails.application.class.module_parent_name.underscore,
   service_namespace:        "my-org",
   service_version:          ENV.fetch("GIT_COMMIT_SHA", "unknown"),
-  integrate_tracing_logger: true
+  deployment_environment:   Rails.env,
+  correlate_logs:           true,
+  require_endpoint:         Rails.env.production?
 )
 ```
 
 When Rails is detected, setup always:
 
-- Inserts `Telemetry::Middleware` into the Rails middleware stack (traces every request, records HTTP metrics)
-- Registers `at_exit` to flush pending telemetry on process exit
+- Inserts `Telemetry::Middleware` into the Rails middleware stack to trace every request and record HTTP metrics.
+- Measures every processed controller action, including mounted engine controllers.
+- Measures every executed Active Record operation while excluding cache hits, schema inspection, and transaction control.
+- Measures every Active Job execution and carries W3C trace context through job serialization.
+- Registers `at_exit` to flush pending telemetry on process exit.
 
-With `integrate_tracing_logger: true`, setup also:
+With `correlate_logs: true`, setup assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace and span ID correlation in text output without exporting every Rails log record.
 
-- Assigns `Telemetry::TraceFormatter` to `Rails.logger.formatter` for trace/span ID correlation in text output
-- Bridges `Rails.logger` to OTel — every `Rails.logger` call also emits an OTel log record with trace context
+With `integrate_tracing_logger: true`, setup also bridges `Rails.logger` to OTel, so every `Rails.logger` call emits an OTel log record with trace context.
 
 `Telemetry::Middleware` traces every request and records metrics for each one.
 
@@ -109,7 +116,7 @@ With `integrate_tracing_logger: true`, setup also:
 | Instrument | Type | Unit | Attributes |
 |-----------|------|------|-----------|
 | `http.server.request.count` | counter | `{request}` | `http.request.method`, `http.route`, `http.response.status_code`, `rails.controller`*, `rails.action`* |
-| `http.server.request.duration` | histogram | `ms` | same as above |
+| `http.server.request.duration` | histogram | `s` | same as above |
 | `http.server.active_requests` | up-down counter | `{request}` | `http.request.method` |
 
 \* `rails.controller` and `rails.action` are set from `action_dispatch.request.path_parameters` and are omitted when the middleware is used outside Rails.
@@ -127,6 +134,8 @@ use Telemetry::Middleware # Mount the middleware
 ## Signals
 
 All three signals are included as hard gem dependencies and wired on every `Telemetry.setup` call.
+Providers remain usable without network exporters when no endpoint is configured.
+Set a shared or signal-specific standard OTLP endpoint to enable export.
 
 | Signal | Gems |
 |--------|------|
@@ -154,7 +163,8 @@ rescue => e
 end
 ```
 
-Inside a Rails controller action, any `Telemetry.trace` call is automatically a child of the request span set by `Telemetry::Middleware`.
+Inside a Rails controller action, any `Telemetry.trace` call is automatically a child of the controller action span below the request span set by `Telemetry::Middleware`.
+Database operations become children of the active controller, job, or explicit operation span.
 
 ## Metrics
 
@@ -263,6 +273,44 @@ Telemetry.meter.create_observable_gauge("process.memory.usage", unit: "By") do |
 end
 ```
 
+## Product Actions
+
+A Product Action is one deliberate user intent with a stable application name.
+The recorder emits `app.user.action.count` and an `app.user.action` event on the active span.
+It accepts only the shared actor values `cook`, `guest`, and `anonymous`, and the outcomes `success`, `rejected`, and `error`.
+
+```ruby
+Telemetry.action(
+  "recipe.import.request",
+  actor: "cook",
+  outcome: "success",
+  changed: true
+)
+```
+
+Pass `affected_items:` for a bulk gesture.
+The action counter still increments once, while `app.user.action.affected_items` records the number of affected items.
+
+Rails applications can keep classification in one initializer:
+
+```ruby
+Telemetry.configure_product_actions do |actions|
+  actions.action "RecipesController#create", name: "recipe.create", actor: "cook"
+  actions.exclude "PresenceController#update", reason: "automatic heartbeat"
+end
+```
+
+Definitions can use bounded callables for conditional requests or dynamic action names.
+`Telemetry.product_action_classified?` lets an application enforce complete route classification in tests.
+
+The block form preserves the application result, records unexpected exceptions with the `error` outcome, and re-raises the original exception:
+
+```ruby
+Telemetry.action("recipe.import.request", actor: "cook", outcome: "success") do
+  request_import
+end
+```
+
 ## Logging
 
 ### Via Rails.logger (recommended with `integrate_tracing_logger: true`)
@@ -332,6 +380,11 @@ Telemetry.test_mode!
 `test_mode!` sets `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, and `OTEL_LOGS_EXPORTER` to `none` (unless already set), suppressing connection-refused noise when no collector is running locally.
 
 In test mode, `integrate_tracing_logger: true` is ignored — `TraceFormatter` and `LogBridge` are not wired to `Rails.logger`. This avoids formatter conflicts and noisy warnings during tests.
+
+## Shared conventions
+
+This library implements version `1.0.0` of the public [Bitsmithy Telemetry Conventions](https://github.com/bitsmithy/telemetry-conventions).
+Stable OpenTelemetry semantic conventions take precedence, and the vendored contract checksum makes convention upgrades explicit in tests.
 
 ## License
 

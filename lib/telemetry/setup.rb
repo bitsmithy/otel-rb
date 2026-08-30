@@ -12,7 +12,7 @@ module Telemetry
 
       # --- Traces ---
       tracer_provider = OpenTelemetry::SDK::Trace::TracerProvider.new(resource: resource)
-      unless exporter_none?('OTEL_TRACES_EXPORTER')
+      if exporter_enabled?(config, 'TRACES')
         trace_exporter = OpenTelemetry::Exporter::OTLP::Exporter.new(**endpoint_opts(config))
         tracer_provider.add_span_processor(
           OpenTelemetry::SDK::Trace::Export::BatchSpanProcessor.new(trace_exporter)
@@ -37,11 +37,13 @@ module Telemetry
     end
 
     private_class_method def self.build_resource(config)
-      OpenTelemetry::SDK::Resources::Resource.create(
+      attributes = {
         'service.name' => config.service_name,
         'service.namespace' => config.service_namespace,
-        'service.version' => config.service_version
-      )
+        'service.version' => config.service_version,
+        'deployment.environment.name' => config.deployment_environment
+      }.compact
+      OpenTelemetry::SDK::Resources::Resource.create(attributes)
     end
 
     private_class_method def self.endpoint_opts(config)
@@ -53,7 +55,7 @@ module Telemetry
       require 'opentelemetry/metrics'
 
       OpenTelemetry::SDK::Metrics::MeterProvider.new(resource: resource).tap do |mp|
-        unless exporter_none?('OTEL_METRICS_EXPORTER')
+        if exporter_enabled?(config, 'METRICS')
           require 'opentelemetry-exporter-otlp-metrics'
           require 'opentelemetry/exporter/otlp_metrics'
           metric_exporter = OpenTelemetry::Exporter::OTLP::Metrics::MetricsExporter.new(**endpoint_opts(config))
@@ -69,7 +71,7 @@ module Telemetry
       require 'opentelemetry/logs'
 
       logger_provider = OpenTelemetry::SDK::Logs::LoggerProvider.new(resource: resource)
-      unless exporter_none?('OTEL_LOGS_EXPORTER')
+      if exporter_enabled?(config, 'LOGS')
         require 'opentelemetry-exporter-otlp-logs'
         require 'opentelemetry/exporter/otlp_logs'
         log_exporter = OpenTelemetry::Exporter::OTLP::Logs::LogsExporter.new(**endpoint_opts(config))
@@ -80,8 +82,11 @@ module Telemetry
       OpenTelemetry.logger_provider = logger_provider
     end
 
-    private_class_method def self.exporter_none?(env_var)
-      ENV.fetch(env_var, '').strip.downcase == 'none'
+    private_class_method def self.exporter_enabled?(config, signal)
+      return false if ENV.fetch("OTEL_#{signal}_EXPORTER", '').strip.downcase == 'none'
+
+      config.endpoint || ENV.fetch("OTEL_EXPORTER_OTLP_#{signal}_ENDPOINT", nil) ||
+        ENV.fetch('OTEL_EXPORTER_OTLP_ENDPOINT', nil)
     end
 
     private_class_method def self.composite_propagator
