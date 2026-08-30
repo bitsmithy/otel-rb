@@ -21,16 +21,15 @@ module Telemetry
     end
 
     # Records one deliberate user intent as a Product Action metric and span event.
-    def action(name, actor:, outcome:, changed: nil, affected_items: nil)
-      return product_actions.record(name, actor:, outcome:, changed:, affected_items:) unless block_given?
+    def action(name, actor:, outcome:, **details)
+      options = { actor:, outcome:, **details }
+      return product_actions.record(name, **options) unless block_given?
 
       result = yield
-      product_actions.record(name, actor:, outcome:, changed:, affected_items:)
+      product_actions.record(name, **options)
       result
     rescue StandardError => e
-      product_actions.record(
-        name, actor:, outcome: 'error', changed:, affected_items:, error_type: e.class.name
-      )
+      product_actions.record(name, **options, outcome: 'error', error_type: e.class.name)
       raise
     end
 

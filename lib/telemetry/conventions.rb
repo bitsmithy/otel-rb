@@ -2,7 +2,7 @@
 
 module Telemetry
   module Conventions
-    VERSION = '1.0.0'
-    SHA256 = 'd52e0dc09e36df82f23d1746e45460ba05bc0496a41368a769916b6534d82204'
+    VERSION = '1.1.0'
+    SHA256 = 'dfd5294687d88f34e2a375eccf9a44483100047dea898d6e25e3ba2a98b362d9'
   end
 end

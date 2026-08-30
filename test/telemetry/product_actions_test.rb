@@ -42,6 +42,24 @@ class ProductActionsTest < Minitest::Test
     assert_equal expected, event_attributes
   end
 
+  def test_records_a_bounded_product_action_variant
+    Telemetry.tracer.in_span('request') do
+      Telemetry.action(
+        'household.setup.complete', actor: 'cook', outcome: 'success', changed: true, variant: 'starter'
+      )
+    end
+
+    assert_equal 'starter', action_attributes.fetch('app.user.action.variant')
+  end
+
+  def test_rejects_an_unknown_product_action_variant
+    assert_raises(Telemetry::ConfigurationError) do
+      Telemetry.action(
+        'household.setup.complete', actor: 'cook', outcome: 'success', variant: 'private choice'
+      )
+    end
+  end
+
   def test_rejects_an_unknown_actor_before_recording
     assert_raises(Telemetry::ConfigurationError) do
       Telemetry.action('recipe.import.request', actor: 'operator', outcome: 'success')
@@ -88,6 +106,21 @@ class ProductActionsTest < Minitest::Test
     assert_equal 'recipe.create', action_attributes.fetch('app.user.action.name')
   end
 
+  def test_declarative_catalog_can_override_an_application_outcome
+    Telemetry.configure_product_actions do |catalog|
+      catalog.action(
+        'IngredientAliasesController#create', name: 'ingredient_alias.create', actor: 'cook',
+                                              outcome: ->(payload) { payload.fetch(:product_outcome) }
+      )
+    end
+    payload = {
+      controller: 'IngredientAliasesController', action: 'create', status: 302, product_outcome: 'rejected'
+    }
+    ActiveSupport::Notifications.instrument('process_action.action_controller', **payload) { nil }
+
+    assert_equal 'rejected', action_attributes.fetch('app.user.action.outcome')
+  end
+
   def test_declarative_catalog_can_exclude_an_automatic_request
     Telemetry.configure_product_actions do |catalog|
       catalog.action(
@@ -123,7 +156,8 @@ class ProductActionsTest < Minitest::Test
       catalog.action(
         'ShoppingContributionPurchasesController#create_all',
         name: ->(_) { 'shopping.purchase.mark' }, actor: ->(_) { 'cook' },
-        changed: ->(_) { true }, affected_items: ->(payload) { payload.fetch(:affected_items) }
+        changed: ->(_) { true }, variant: ->(_) { 'all' },
+        affected_items: ->(payload) { payload.fetch(:affected_items) }
       )
     end
     ActiveSupport::Notifications.instrument(
@@ -131,8 +165,9 @@ class ProductActionsTest < Minitest::Test
       controller: 'ShoppingContributionPurchasesController', action: 'create_all', status: 200, affected_items: 4
     ) { nil }
 
-    assert_equal ['shopping.purchase.mark', 4],
-                 [action_attributes.fetch('app.user.action.name'), affected_item_sum]
+    assert_equal ['shopping.purchase.mark', 'all', 4],
+                 [action_attributes.fetch('app.user.action.name'),
+                  action_attributes.fetch('app.user.action.variant'), affected_item_sum]
   end
 
   private

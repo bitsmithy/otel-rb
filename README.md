@@ -290,6 +290,7 @@ Telemetry.action(
 
 Pass `affected_items:` for a bulk gesture.
 The action counter still increments once, while `app.user.action.affected_items` records the number of affected items.
+Pass `variant:` only for a choice from the shared contract's finite variant list.
 
 Rails applications can keep classification in one initializer:
 
@@ -310,6 +311,18 @@ Telemetry.action("recipe.import.request", actor: "cook", outcome: "success") do
   request_import
 end
 ```
+
+## Trusted trace propagation
+
+Inject W3C trace context only when calling a trusted internal service:
+
+```ruby
+headers = { "Authorization" => "Bearer ..." }
+Telemetry.inject_trusted_context(headers)
+```
+
+This method preserves existing headers and injects only `traceparent` and `tracestate`.
+Do not call it for public or user-provided destinations.
 
 ## Logging
 
@@ -383,7 +396,7 @@ In test mode, `integrate_tracing_logger: true` is ignored — `TraceFormatter` a
 
 ## Shared conventions
 
-This library implements version `1.0.0` of the public [Bitsmithy Telemetry Conventions](https://github.com/bitsmithy/telemetry-conventions).
+This library implements version `1.1.0` of the public [Bitsmithy Telemetry Conventions](https://github.com/bitsmithy/telemetry-conventions).
 Stable OpenTelemetry semantic conventions take precedence, and the vendored contract checksum makes convention upgrades explicit in tests.
 
 ## License

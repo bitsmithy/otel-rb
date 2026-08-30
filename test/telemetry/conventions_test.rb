@@ -6,10 +6,10 @@ require 'test_helper'
 
 class ConventionsTest < Minitest::Test
   def test_pins_the_shared_contract
-    fixture = File.expand_path('../fixtures/telemetry-conventions-v1.0.0.json', __dir__)
+    fixture = File.expand_path('../fixtures/telemetry-conventions-v1.1.0.json', __dir__)
     manifest = JSON.parse(File.read(fixture))
 
-    assert_equal ['1.0.0', manifest.fetch('contract_version'), Digest::SHA256.file(fixture).hexdigest],
+    assert_equal ['1.1.0', manifest.fetch('contract_version'), Digest::SHA256.file(fixture).hexdigest],
                  [Telemetry::Conventions::VERSION, Telemetry::Conventions::VERSION, Telemetry::Conventions::SHA256]
   end
 end

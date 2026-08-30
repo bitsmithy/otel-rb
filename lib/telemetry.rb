@@ -15,6 +15,7 @@ require 'telemetry/product_action_catalog'
 require 'telemetry/product_actions'
 require 'telemetry/product_action_api'
 require 'telemetry/logging_api'
+require 'telemetry/trusted_propagation'
 require 'telemetry/trace_formatter'
 require 'telemetry/log_bridge'
 require 'telemetry/logger'
@@ -60,6 +61,7 @@ module Telemetry
     include Metering
     include ProductActionAPI
     include LoggingAPI
+    include TrustedPropagation
 
     attr_reader :tracer
     # Returns the raw OpenTelemetry::Meter for this service.

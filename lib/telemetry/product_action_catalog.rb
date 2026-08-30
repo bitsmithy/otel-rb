@@ -2,8 +2,8 @@
 
 module Telemetry
   class ProductActionCatalog
-    Definition = Data.define(:name, :actor, :condition, :changed, :affected_items)
-    ACTION_OPTIONS = %i[name actor condition changed affected_items].freeze
+    Definition = Data.define(:name, :actor, :condition, :outcome, :changed, :variant, :affected_items)
+    ACTION_OPTIONS = %i[name actor condition outcome changed variant affected_items].freeze
 
     attr_reader :definitions, :exclusions
 
@@ -20,7 +20,9 @@ module Telemetry
         name: options.fetch(:name),
         actor: options.fetch(:actor),
         condition: options[:condition],
+        outcome: options[:outcome],
         changed: options[:changed],
+        variant: options[:variant],
         affected_items: options[:affected_items]
       )
     end
@@ -45,8 +47,9 @@ module Telemetry
       {
         name: resolve_value(definition.name, payload),
         actor: resolve_value(definition.actor, payload),
-        outcome: outcome(payload),
+        outcome: resolve_value(definition.outcome, payload) || inferred_outcome(payload),
         changed: resolve_value(definition.changed, payload),
+        variant: resolve_value(definition.variant, payload),
         affected_items: resolve_value(definition.affected_items, payload)
       }
     end
@@ -57,7 +60,7 @@ module Telemetry
       "#{payload.fetch(:controller)}##{payload.fetch(:action)}"
     end
 
-    def outcome(payload)
+    def inferred_outcome(payload)
       return 'error' if payload[:exception_object] || payload.fetch(:status, 200) >= 500
       return 'rejected' if payload.fetch(:status, 200) >= 400
 
@@ -86,7 +89,9 @@ module Telemetry
 
       validate_static_name!(options.fetch(:name))
       validate_static_actor!(options.fetch(:actor))
+      validate_static_outcome!(options[:outcome])
       validate_static_changed!(options[:changed])
+      validate_static_variant!(options[:variant])
       validate_static_affected_items!(options[:affected_items])
     end
 
@@ -102,10 +107,22 @@ module Telemetry
       raise ConfigurationError, "invalid Product Action actor: #{actor}"
     end
 
+    def validate_static_outcome!(outcome)
+      return if outcome.respond_to?(:call) || outcome.nil? || ProductActions::OUTCOMES.include?(outcome)
+
+      raise ConfigurationError, "invalid Product Action outcome: #{outcome}"
+    end
+
     def validate_static_changed!(changed)
       return if changed.respond_to?(:call) || changed.nil? || changed == true || changed == false
 
       raise ConfigurationError, 'Product Action changed must be true, false, or nil'
+    end
+
+    def validate_static_variant!(variant)
+      return if variant.respond_to?(:call) || variant.nil? || ProductActions::VARIANTS.include?(variant)
+
+      raise ConfigurationError, "invalid Product Action variant: #{variant}"
     end
 
     def validate_static_affected_items!(affected_items)
